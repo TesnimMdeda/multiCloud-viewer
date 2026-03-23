@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+    </parent>
+    <groupId>com.multicloud</groupId>
+    <artifactId>cloud-profile-service</artifactId>
+    <version>1.0.0</version>
+
+    <properties>
+        <java.version>17</java.version>
+        <spring-cloud.version>2023.0.0</spring-cloud.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <gcp.version>26.29.0</gcp.version>
+        <oci.version>3.30.0</oci.version>
+    </properties>
+
+    <dependencies>
+
+        <!-- ═══ SPRING BOOT CORE ═══ -->
+        <dependency><groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId></dependency>
+
+        <!-- ═══ EUREKA CLIENT ═══ -->
+        <dependency><groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId></dependency>
+
+        <!-- ═══ DATABASE ═══ -->
+        <dependency><groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId><scope>runtime</scope></dependency>
+
+        <!-- ═══ GCP SDK — Google Cloud Storage + IAM ═══ -->
+        <!-- Core BOM — manages all google-cloud-* versions -->
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>libraries-bom</artifactId>
+            <version>26.29.0</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+        <!-- Cloud Storage client -->
+        <dependency><groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-storage</artifactId></dependency>
+        <!-- Resource Manager — validate project ID -->
+        <dependency><groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-resourcemanager</artifactId></dependency>
+        <!-- Auth library — parse service account JSON key -->
+        <dependency><groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId></dependency>
+
+        <!-- ═══ OCI SDK — Oracle Cloud ═══ -->
+        <dependency><groupId>com.oracle.oci.sdk</groupId>
+            <artifactId>oci-java-sdk-common</artifactId>
+            <version>${oci.version}</version></dependency>
+        <!-- Object Storage -->
+        <dependency><groupId>com.oracle.oci.sdk</groupId>
+            <artifactId>oci-java-sdk-objectstorage</artifactId>
+            <version>${oci.version}</version></dependency>
+        <!-- Identity — validate tenancy/user -->
+        <dependency><groupId>com.oracle.oci.sdk</groupId>
+            <artifactId>oci-java-sdk-identity</artifactId>
+            <version>${oci.version}</version></dependency>
+
+        <!-- ═══ ENCRYPTION (AES-256 for keys in DB) ═══ -->
+        <dependency><groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId></dependency>
+
+        <!-- ═══ UTILITIES ═══ -->
+        <dependency><groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version></dependency>
+        <dependency><groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct-processor</artifactId>
+            <version>${mapstruct.version}</version><scope>provided</scope></dependency>
+        <dependency><groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version></dependency>
+
+        <!-- ═══ JWT (validate bearer from Gateway headers) ═══ -->
+        <dependency><groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId><version>0.12.3</version></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.3</version><scope>runtime</scope></dependency>
+        <dependency><groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.3</version><scope>runtime</scope></dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Cloud BOM -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type><scope>import</scope>
+            </dependency>
+            <!-- GCP Libraries BOM -->
+            <dependency>
+                <groupId>com.google.cloud</groupId>
+                <artifactId>libraries-bom</artifactId>
+                <version>${gcp.version}</version>
+                <type>pom</type><scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

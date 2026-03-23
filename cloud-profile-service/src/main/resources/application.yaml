@@ -1,0 +1,51 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: cloud-profile-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cloud_profiles_db
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:2025}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+
+encryption:
+  key: ${ENCRYPTION_KEY}
+  algorithm: AES/GCB/NoPadding
+
+springdoc:
+  swagger-ui:
+    path: /api/cloud/swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.multicloud.cloudprofile: DEBUG
+    com.google.cloud: WARN
+    com.oracle.bmc: WARN

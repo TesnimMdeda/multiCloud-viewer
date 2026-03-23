@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+
+        - id: auth-public
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/login,/api/auth/forgot-password,/api/auth/reset-password
+
+
+        - id: auth-protected
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: JwtAuthFilter
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+jwt:
+  secret: ${JWT_SECRET:changeme-at-least-32-characters-long!!}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
