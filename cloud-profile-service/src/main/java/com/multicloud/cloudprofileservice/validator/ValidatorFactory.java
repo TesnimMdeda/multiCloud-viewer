@@ -1,7 +1,6 @@
 package com.multicloud.cloudprofileservice.validator;
 
 import com.multicloud.cloudprofileservice.entity.CloudProvider;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,7 +13,6 @@ import java.util.stream.Collectors;
  * Adding a new provider = add a new @Component validator. Zero changes here.
  */
 @Component
-@RequiredArgsConstructor
 public class ValidatorFactory {
 
     private final Map<CloudProvider, CloudCredentialValidator> validators;

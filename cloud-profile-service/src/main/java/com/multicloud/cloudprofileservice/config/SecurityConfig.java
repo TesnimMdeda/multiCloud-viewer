@@ -21,8 +21,8 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/api/cloud-profiles/v3/api-docs/**",
-            "/api/cloud-profiles/swagger-ui/**",
+            "/api/cloud/v3/api-docs/**",
+            "/api/cloud/swagger-ui/**",
             "/actuator/**"
     };
 

@@ -32,6 +32,14 @@
             <artifactId>spring-cloud-starter-gateway</artifactId>
         </dependency>
 
+        <!-- ✅ TESTING (JUnit 5 included) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+
         <!-- Eureka -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

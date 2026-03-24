@@ -5,13 +5,17 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.UUID;
+import java.util.Optional;
 
 @Repository
-public interface OciProfileDetailsRepository extends JpaRepository<OciProfileDetails, UUID> {
+public interface OciProfileDetailsRepository extends JpaRepository<OciProfileDetails, String> {
 
-    List<OciProfileDetails> findByCreatedByUserId(String userId);
+    Optional<OciProfileDetails> findByProfile_Id(String profileId);
 
-    List<OciProfileDetails> findByTenancyOcidAndCreatedByUserId(
-            String tenancyOcid, String userId);
+    // convenience alias used by storage adapter
+    default Optional<OciProfileDetails> findByProfileId(String profileId) {
+        return findByProfile_Id(profileId);
+    }
+
+    List<OciProfileDetails> findByProfile_OwnerId(String ownerId);
 }

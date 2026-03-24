@@ -24,7 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
 
-    // NOTE: no UserDetailsService here — this service validates the JWT
+    // NOTE: No UserDetailsService here — this service validates the JWT
     // directly using the shared secret. User data comes from the token claims
     // forwarded by the Gateway (X-User-Email, X-User-Role headers).
 
@@ -57,7 +57,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (userEmail != null &&
                 SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            var authority = new SimpleGrantedAuthority("ROLE_" + (userRole != null ? userRole : "CLIENT"));
+            var authority = new SimpleGrantedAuthority(
+                    "ROLE_" + (userRole != null ? userRole : "CLIENT"));
             var auth = new UsernamePasswordAuthenticationToken(
                     userEmail, null, List.of(authority));
             auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

@@ -17,7 +17,7 @@ public class SwaggerConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Cloud Profile Service API")
-                        .description("CL-10 — Manage GCP and OCI cloud provider profiles")
+                        .description("CL-10 — Manage GCP and OCI cloud provider profiles and storage")
                         .version("1.0.0")
                         .contact(new Contact()
                                 .name("Multi-Cloud Team")

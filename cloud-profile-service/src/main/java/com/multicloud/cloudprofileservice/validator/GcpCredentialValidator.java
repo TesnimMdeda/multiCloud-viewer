@@ -1,10 +1,10 @@
 package com.multicloud.cloudprofileservice.validator;
 
+import com.google.api.gax.core.FixedCredentialsProvider;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.resourcemanager.v3.ProjectsClient;
 import com.google.cloud.resourcemanager.v3.ProjectsSettings;
-import com.google.api.gax.core.FixedCredentialsProvider;
 import com.multicloud.cloudprofileservice.dto.request.GcpProfileRequest;
 import com.multicloud.cloudprofileservice.dto.response.ValidationResult;
 import com.multicloud.cloudprofileservice.entity.CloudProvider;
@@ -29,7 +29,7 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
         try {
             byte[] keyBytes = request.getServiceAccountKey().getBytes();
 
-            // ── Step 1: Parse the service account JSON ─────────
+            // ── Step 1: Parse the service account JSON ─────────────────────
             GoogleCredentials credentials = GoogleCredentials.fromStream(
                     new ByteArrayInputStream(keyBytes));
 
@@ -39,7 +39,7 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
                         "The provided key is not a service account key");
             }
 
-            // ── Step 2: Call Resource Manager to verify project ─
+            // ── Step 2: Call Resource Manager to verify project ─────────────
             credentials = credentials.createScoped(
                     "https://www.googleapis.com/auth/cloud-platform.read-only");
 
@@ -51,7 +51,7 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
                 // getProject throws NOT_FOUND or PERMISSION_DENIED if key is invalid
                 var project = projectsClient.getProject("projects/" + request.getProjectId());
 
-                // ── Step 3: Extract details from the project and key ─
+                // ── Step 3: Extract details from the project and key ─────────
                 Map<String, String> details = new HashMap<>();
                 details.put("projectId", request.getProjectId());
                 details.put("projectDisplayName", project.getDisplayName());
@@ -74,8 +74,7 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
             throw e;
         } catch (Exception e) {
             log.warn("GCP validation failed: {}", e.getMessage());
-            throw new CloudValidationException(
-                    "GCP validation failed: " + e.getMessage());
+            throw new CloudValidationException("GCP validation failed: " + e.getMessage());
         }
     }
 }

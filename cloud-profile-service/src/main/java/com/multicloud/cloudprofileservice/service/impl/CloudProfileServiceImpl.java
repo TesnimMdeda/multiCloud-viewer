@@ -1,29 +1,30 @@
 package com.multicloud.cloudprofileservice.service.impl;
 
-import com.multicloud.cloudprofileservice.dto.request.CreateGcpProfileRequest;
-import com.multicloud.cloudprofileservice.dto.request.CreateOciProfileRequest;
-import com.multicloud.cloudprofile.dto.response.CloudProfileResponse;
+import com.multicloud.cloudprofileservice.dto.request.GcpProfileRequest;
+import com.multicloud.cloudprofileservice.dto.request.OciProfileRequest;
+import com.multicloud.cloudprofileservice.dto.response.CloudProfileResponse;
+import com.multicloud.cloudprofileservice.dto.response.ValidationResult;
 import com.multicloud.cloudprofileservice.entity.*;
-import com.multicloud.cloudprofile.exception.CloudValidationException;
-import com.multicloud.cloudprofile.exception.ProfileNotFoundException;
-import com.multicloud.cloudprofile.mapper.GcpProfileMapper;
-import com.multicloud.cloudprofile.mapper.OciProfileMapper;
-import com.multicloud.cloudprofile.repository.GcpProfileRepository;
-import com.multicloud.cloudprofile.repository.OciProfileRepository;
-import com.multicloud.cloudprofile.service.CloudProfileService;
-import com.multicloud.cloudprofile.service.CloudValidationService.ValidationResult;
-import com.multicloud.cloudprofile.util.EncryptionUtil;
-import com.multicloud.cloudprofile.util.ValidationStrategyFactory;
+import com.multicloud.cloudprofileservice.exception.ProfileNotFoundException;
+import com.multicloud.cloudprofileservice.exception.UnauthorizedActionException;
+import com.multicloud.cloudprofileservice.mapper.CloudProfileMapper;
+import com.multicloud.cloudprofileservice.repository.CloudProfileRepository;
+import com.multicloud.cloudprofileservice.repository.GcpProfileDetailsRepository;
+import com.multicloud.cloudprofileservice.repository.OciProfileDetailsRepository;
+import com.multicloud.cloudprofileservice.service.CloudProfileService;
+import com.multicloud.cloudprofileservice.validator.ValidatorFactory;
+import com.multicloud.cloudprofileservice.entity.GcpProfileDetails;
+import com.multicloud.cloudprofileservice.entity.OciProfileDetails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -31,157 +32,148 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 public class CloudProfileServiceImpl implements CloudProfileService {
 
-    private final GcpProfileRepository      gcpRepository;
-    private final OciProfileRepository      ociRepository;
-    private final GcpProfileMapper          gcpMapper;
-    private final OciProfileMapper          ociMapper;
-    private final EncryptionUtil            encryptionUtil;
-    private final ValidationStrategyFactory validationFactory;
+    private final CloudProfileRepository   profileRepository;
+    private final GcpProfileDetailsRepository gcpRepo;
+    private final OciProfileDetailsRepository ociRepo;
+    private final ValidatorFactory         validatorFactory;
+    private final EncryptionService encryptionService;
+    private final CloudProfileMapper       mapper;
+
+    // ═══════════════════════════════════════════════════════════════
+    // CREATE GCP PROFILE
+    // Workflow: validate → extract details → encrypt key → save
+    // ═══════════════════════════════════════════════════════════════
 
     @Override
-    public CloudProfileResponse createGcpProfile(
-            CreateGcpProfileRequest request, String userId) {
+    public CloudProfileResponse createGcpProfile(GcpProfileRequest request, String ownerId) {
 
-        GcpProfile profile = new GcpProfile();
-        profile.setProfileName(request.getProfileName());
-        profile.setProjectId(request.getProjectId());
-        profile.setRegion(request.getRegion());
-        profile.setProvider(CloudProvider.GCP);
-        profile.setStatus(ProfileStatus.PENDING);
-        profile.setCreatedByUserId(userId);
+        // 1. Validate credentials against real GCP SDK (throws on failure)
+        ValidationResult result = validatorFactory
+                .getValidator(CloudProvider.GCP)
+                .validate(request);
 
-        // Encrypt key before storing
-        profile.setEncryptedServiceAccountKey(
-                encryptionUtil.encrypt(request.getServiceAccountKeyJson()));
+        // 2. Create base profile record
+        CloudProfile profile = CloudProfile.builder()
+                .profileName(request.getProfileName())
+                .provider(CloudProvider.GCP)
+                .region(request.getRegion())
+                .ownerId(ownerId)
+                .status(result.isValid()
+                        ? CloudProfile.ProfileStatus.VALID
+                        : CloudProfile.ProfileStatus.INVALID)
+                .lastValidatedAt(LocalDateTime.now())
+                .build();
 
-        // Validate against GCP API
-        profile = gcpRepository.save(profile);
-        profile = validateAndEnrich(profile, gcpRepository.save(profile));
+        profileRepository.save(profile);
 
-        log.info("GCP profile created: {} for user: {}", profile.getId(), userId);
-        return gcpMapper.toResponse(profile);
+        // 3. Encrypt service account key before persisting
+        String rawKey = readMultipartAsString(request.getServiceAccountKey());
+        String encryptedKey = encryptionService.encrypt(rawKey);
+
+        // 4. Save GCP-specific details (auto-extracted by SDK)
+        Map<String, String> details = result.getExtractedDetails();
+        GcpProfileDetails gcpDetails = GcpProfileDetails.builder()
+                .profile(profile)
+                .projectId(request.getProjectId())
+                .serviceAccountEmail(details.get("serviceAccountEmail"))
+                .clientId(details.get("clientId"))
+                .keyType("service_account")
+                .tokenUri(details.get("tokenUri"))
+                .encryptedServiceAccountKey(encryptedKey)
+                .build();
+
+        gcpRepo.save(gcpDetails);
+
+        log.info("GCP profile created: {} for owner: {}", profile.getId(), ownerId);
+        return mapper.toResponse(profile, details);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CREATE OCI PROFILE
+    // ═══════════════════════════════════════════════════════════════
 
     @Override
-    public CloudProfileResponse createOciProfile(
-            CreateOciProfileRequest request, String userId) {
+    public CloudProfileResponse createOciProfile(OciProfileRequest request, String ownerId) {
 
-        OciProfile profile = new OciProfile();
-        profile.setProfileName(request.getProfileName());
-        profile.setRegion(request.getRegion());
-        profile.setTenancyOcid(request.getTenancyOcid());
-        profile.setUserOcid(request.getUserOcid());
-        profile.setFingerprint(request.getFingerprint());
-        profile.setProvider(CloudProvider.OCI);
-        profile.setStatus(ProfileStatus.PENDING);
-        profile.setCreatedByUserId(userId);
+        // 1. Validate credentials against real OCI SDK (throws on failure)
+        ValidationResult result = validatorFactory
+                .getValidator(CloudProvider.OCI)
+                .validate(request);
 
-        // Encrypt PEM key before storing
-        profile.setEncryptedPrivateKey(
-                encryptionUtil.encrypt(request.getPrivateKeyPem()));
+        // 2. Create base profile record
+        CloudProfile profile = CloudProfile.builder()
+                .profileName(request.getProfileName())
+                .provider(CloudProvider.OCI)
+                .region(request.getRegion())
+                .ownerId(ownerId)
+                .status(result.isValid()
+                        ? CloudProfile.ProfileStatus.VALID
+                        : CloudProfile.ProfileStatus.INVALID)
+                .lastValidatedAt(LocalDateTime.now())
+                .build();
 
-        profile = ociRepository.save(profile);
-        profile = validateAndEnrich(profile, ociRepository.save(profile));
+        profileRepository.save(profile);
 
-        log.info("OCI profile created: {} for user: {}", profile.getId(), userId);
-        return ociMapper.toResponse(profile);
+        // 3. Encrypt private key before persisting
+        String encryptedKey = encryptionService.encrypt(
+                readMultipartAsString(request.getPrivateKey()));
+
+        // 4. Save OCI-specific details
+        Map<String, String> details = result.getExtractedDetails();
+        OciProfileDetails ociDetails = OciProfileDetails.builder()
+                .profile(profile)
+                .tenancyOcid(request.getTenancyOcid())
+                .userOcid(request.getUserOcid())
+                .fingerprint(request.getFingerprint())
+                .tenancyName(details.get("tenancyName"))
+                .homeRegion(details.get("homeRegion"))
+                .compartmentId(request.getTenancyOcid()) // root compartment
+                .encryptedPrivateKey(encryptedKey)
+                .build();
+
+        ociRepo.save(ociDetails);
+
+        log.info("OCI profile created: {} for owner: {}", profile.getId(), ownerId);
+        return mapper.toResponse(profile, details);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // LIST PROFILES
+    // ═══════════════════════════════════════════════════════════════
 
     @Override
     @Transactional(readOnly = true)
-    public CloudProfileResponse getById(UUID id, String userId) {
-        return findAndMap(id, userId);
+    public List<CloudProfileResponse> getProfilesByOwner(String ownerId) {
+        return profileRepository.findByOwnerId(ownerId).stream()
+                .map(p -> mapper.toResponse(p, Map.of()))
+                .toList();
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DELETE PROFILE
+    // ═══════════════════════════════════════════════════════════════
 
     @Override
-    @Transactional(readOnly = true)
-    public List<CloudProfileResponse> getAllByUser(String userId) {
-        List<CloudProfileResponse> gcpProfiles = gcpRepository
-                .findByCreatedByUserId(userId)
-                .stream()
-                .map(gcpMapper::toResponse)
-                .collect(Collectors.toList());
+    public void deleteProfile(String profileId, String ownerId) {
+        CloudProfile profile = profileRepository.findById(profileId)
+                .orElseThrow(() -> new ProfileNotFoundException(profileId));
 
-        List<CloudProfileResponse> ociProfiles = ociRepository
-                .findByCreatedByUserId(userId)
-                .stream()
-                .map(ociMapper::toResponse)
-                .collect(Collectors.toList());
+        if (!profile.getOwnerId().equals(ownerId)) {
+            throw new UnauthorizedActionException("You do not own this profile");
+        }
 
-        return Stream.concat(gcpProfiles.stream(), ociProfiles.stream())
-                .collect(Collectors.toList());
+        // Detail rows cascade-delete via ON DELETE CASCADE in DB schema
+        profileRepository.delete(profile);
+        log.info("Profile {} deleted by owner {}", profileId, ownerId);
     }
 
-    @Override
-    public CloudProfileResponse revalidate(UUID id, String userId) {
-        return findAndMap(id, userId); // validation re-triggered inside
-    }
+    // ─── private helpers ────────────────────────────────────────────
 
-    @Override
-    public void delete(UUID id, String userId) {
-        gcpRepository.findById(id).ifPresent(p -> {
-            checkOwnership(p, userId);
-            gcpRepository.delete(p);
-        });
-        ociRepository.findById(id).ifPresent(p -> {
-            checkOwnership(p, userId);
-            ociRepository.delete(p);
-        });
-    }
-
-    // ─── private helpers ───────────────────────────────────────────────────
-
-    @SuppressWarnings("unchecked")
-    private <T extends CloudProfile> T validateAndEnrich(T profile, T saved) {
+    private String readMultipartAsString(org.springframework.web.multipart.MultipartFile file) {
         try {
-            var validator = validationFactory.getValidator(saved.getProvider());
-            ValidationResult result = validator.validate(saved);
-
-            saved.setStatus(result.valid() ? ProfileStatus.ACTIVE : ProfileStatus.INVALID);
-            saved.setValidationMessage(result.message());
-            saved.setLastValidatedAt(LocalDateTime.now());
-
-            if (result.valid()) {
-                if (saved instanceof GcpProfile gcp) {
-                    gcp.setServiceAccountEmail(result.extractedMetadata1());
-                    gcp.setProjectNumber(result.extractedMetadata2());
-                } else if (saved instanceof OciProfile oci) {
-                    oci.setTenancyName(result.extractedMetadata1());
-                    oci.setHomeRegion(result.extractedMetadata2());
-                }
-            }
-        } catch (CloudValidationException e) {
-            saved.setStatus(ProfileStatus.INVALID);
-            saved.setValidationMessage(e.getMessage());
-            saved.setLastValidatedAt(LocalDateTime.now());
-            throw e; // re-throw so controller returns 422
-        }
-
-        if (saved instanceof GcpProfile gcp) {
-            return (T) gcpRepository.save(gcp);
-        } else {
-            return (T) ociRepository.save((OciProfile) saved);
-        }
-    }
-
-    private CloudProfileResponse findAndMap(UUID id, String userId) {
-        var gcpOpt = gcpRepository.findById(id);
-        if (gcpOpt.isPresent()) {
-            checkOwnership(gcpOpt.get(), userId);
-            return gcpMapper.toResponse(gcpOpt.get());
-        }
-        var ociOpt = ociRepository.findById(id);
-        if (ociOpt.isPresent()) {
-            checkOwnership(ociOpt.get(), userId);
-            return ociMapper.toResponse(ociOpt.get());
-        }
-        throw new ProfileNotFoundException(id.toString());
-    }
-
-    private void checkOwnership(CloudProfile profile, String userId) {
-        if (!profile.getCreatedByUserId().equals(userId)) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "You do not own this profile");
+            return new String(file.getBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read uploaded file: " + file.getOriginalFilename(), e);
         }
     }
 }

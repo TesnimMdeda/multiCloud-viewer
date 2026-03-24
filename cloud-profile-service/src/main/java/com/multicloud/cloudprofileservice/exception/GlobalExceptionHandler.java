@@ -46,6 +46,12 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ex.getMessage());
     }
 
+    @ExceptionHandler(UnauthorizedActionException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleUnauthorized(UnauthorizedActionException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleAccessDenied(AccessDeniedException ex) {

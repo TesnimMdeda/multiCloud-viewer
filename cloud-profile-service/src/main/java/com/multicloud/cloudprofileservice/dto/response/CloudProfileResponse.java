@@ -1,26 +1,22 @@
-package com.multicloud.cloudprofile.dto.response;
+package com.multicloud.cloudprofileservice.dto.response;
 
-import com.multicloud.cloudprofileservice.entity.CloudProvider;
-import com.multicloud.cloudprofileservice.entity.ProfileStatus;
-import lombok.Data;
+import lombok.*;
 import java.time.LocalDateTime;
-import java.util.UUID;
+import java.util.Map;
 
 @Data
+@Builder
 public class CloudProfileResponse {
-    private UUID id;
+
+    private String id;
     private String profileName;
+    private String provider;     // "GCP", "OCI"...
     private String region;
-    private CloudProvider provider;
-    private ProfileStatus status;
-    private String validationMessage;
-    private String createdByUserId;
-    private LocalDateTime createdAt;
+    private String status;       // VALID / INVALID / PENDING_VALIDATION
+    private String validationError; // null if valid
     private LocalDateTime lastValidatedAt;
-    // provider-specific fields populated by subclass mappers
-    private String projectId;         // GCP
-    private String serviceAccountEmail; // GCP
-    private String tenancyOcid;       // OCI
-    private String userOcid;          // OCI
-    private String fingerprint;       // OCI
+    private LocalDateTime createdAt;
+
+    // Provider-specific details (safe — never exposes keys)
+    private Map<String, String> details;
 }

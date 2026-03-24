@@ -14,17 +14,17 @@ public class CloudProfile {
     private String id;
 
     @Column(nullable = false)
-    private String profileName;
+    private String profileName; // e.g. "Production GCP"
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private CloudProvider provider;
+    private CloudProvider provider; // GCP, OCI...
 
     @Column(nullable = false)
-    private String region;
+    private String region; // us-central1, eu-frankfurt-1...
 
     @Column(nullable = false)
-    private String ownerId;
+    private String ownerId; // user ID from auth-service JWT
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -32,7 +32,7 @@ public class CloudProfile {
     private ProfileStatus status = ProfileStatus.PENDING_VALIDATION;
 
     @Column
-    private String validationError;
+    private String validationError; // populated if validation fails
 
     @Column
     private LocalDateTime lastValidatedAt;

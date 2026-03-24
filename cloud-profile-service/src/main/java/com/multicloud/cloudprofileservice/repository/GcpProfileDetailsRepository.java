@@ -6,13 +6,16 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Repository
-public interface GcpProfileDetailsRepository extends JpaRepository<GcpProfileDetails, UUID> {
+public interface GcpProfileDetailsRepository extends JpaRepository<GcpProfileDetails, String> {
 
-    Optional<GcpProfileDetails> findByProjectIdAndCreatedByUserId(
-            String projectId, String userId);
+    Optional<GcpProfileDetails> findByProfile_Id(String profileId);
 
-    List<GcpProfileDetails> findByCreatedByUserId(String userId);
+    // convenience alias used by storage adapter
+    default Optional<GcpProfileDetails> findByProfileId(String profileId) {
+        return findByProfile_Id(profileId);
+    }
+
+    List<GcpProfileDetails> findByProfile_OwnerId(String ownerId);
 }

@@ -16,13 +16,9 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
-    // Same secret as auth-service — injected via env var
+    // Same secret as auth-service — injected via JWT_SECRET env var
     @Value("${jwt.secret}")
     private String secretKey;
-
-    public String extractUserId(String token) {
-        return extractClaim(token, claims -> claims.get("userId", String.class));
-    }
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);

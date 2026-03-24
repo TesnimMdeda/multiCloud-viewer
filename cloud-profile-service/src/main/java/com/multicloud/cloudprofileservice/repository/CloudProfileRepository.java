@@ -2,21 +2,17 @@ package com.multicloud.cloudprofileservice.repository;
 
 import com.multicloud.cloudprofileservice.entity.CloudProfile;
 import com.multicloud.cloudprofileservice.entity.CloudProvider;
-import com.multicloud.cloudprofileservice.entity.ProfileStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.UUID;
 
 @Repository
-public interface CloudProfileRepository extends JpaRepository<CloudProfile, UUID> {
+public interface CloudProfileRepository extends JpaRepository<CloudProfile, String> {
 
-    List<CloudProfile> findByCreatedByUserId(String userId);
+    List<CloudProfile> findByOwnerId(String ownerId);
 
-    List<CloudProfile> findByCreatedByUserIdAndProvider(String userId, CloudProvider provider);
+    List<CloudProfile> findByOwnerIdAndProvider(String ownerId, CloudProvider provider);
 
-    List<CloudProfile> findByStatus(ProfileStatus status);
-
-    boolean existsByProfileNameAndCreatedByUserId(String profileName, String userId);
+    boolean existsByProfileNameAndOwnerId(String profileName, String ownerId);
 }
