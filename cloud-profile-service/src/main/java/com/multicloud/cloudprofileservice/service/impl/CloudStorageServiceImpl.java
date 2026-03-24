@@ -25,7 +25,6 @@ public class CloudStorageServiceImpl implements CloudStorageService {
     private final CloudProfileRepository profileRepository;
     private final StorageAdapterFactory  adapterFactory;
 
-    // ─── ownership check + adapter resolution ──────────────────────────────
 
     private CloudStorageAdapter resolveAdapter(String profileId, String requestingUserId) {
         CloudProfile profile = profileRepository.findById(profileId)
@@ -38,7 +37,6 @@ public class CloudStorageServiceImpl implements CloudStorageService {
         return adapterFactory.getAdapter(profile.getProvider());
     }
 
-    // ─── operations ────────────────────────────────────────────────────────
 
     @Override
     public List<String> listBuckets(String profileId, String requestingUserId) {

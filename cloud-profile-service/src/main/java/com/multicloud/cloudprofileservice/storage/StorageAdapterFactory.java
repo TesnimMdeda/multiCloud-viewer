@@ -17,7 +17,6 @@ public class StorageAdapterFactory {
 
     private final Map<CloudProvider, CloudStorageAdapter> adapters;
 
-    // Spring injects all CloudStorageAdapter beans automatically
     public StorageAdapterFactory(List<CloudStorageAdapter> adapterList) {
         this.adapters = adapterList.stream()
                 .collect(Collectors.toMap(

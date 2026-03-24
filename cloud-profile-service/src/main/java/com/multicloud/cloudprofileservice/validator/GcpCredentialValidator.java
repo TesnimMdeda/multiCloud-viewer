@@ -29,17 +29,14 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
         try {
             byte[] keyBytes = request.getServiceAccountKey().getBytes();
 
-            // ── Step 1: Parse the service account JSON ─────────────────────
             GoogleCredentials credentials = GoogleCredentials.fromStream(
                     new ByteArrayInputStream(keyBytes));
 
-            // Verify it is a service account (not user credentials)
             if (!(credentials instanceof ServiceAccountCredentials sac)) {
                 throw new CloudValidationException(
                         "The provided key is not a service account key");
             }
 
-            // ── Step 2: Call Resource Manager to verify project ─────────────
             credentials = credentials.createScoped(
                     "https://www.googleapis.com/auth/cloud-platform.read-only");
 
@@ -48,10 +45,8 @@ public class GcpCredentialValidator implements CloudCredentialValidator {
                     .build();
 
             try (ProjectsClient projectsClient = ProjectsClient.create(settings)) {
-                // getProject throws NOT_FOUND or PERMISSION_DENIED if key is invalid
                 var project = projectsClient.getProject("projects/" + request.getProjectId());
 
-                // ── Step 3: Extract details from the project and key ─────────
                 Map<String, String> details = new HashMap<>();
                 details.put("projectId", request.getProjectId());
                 details.put("projectDisplayName", project.getDisplayName());

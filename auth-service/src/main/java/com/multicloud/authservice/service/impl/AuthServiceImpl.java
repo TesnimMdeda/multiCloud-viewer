@@ -59,6 +59,7 @@ public class AuthServiceImpl implements AuthService {
                 .role(request.getRole())
                 .enabled(false)          // disabled until password is set
                 .accountNonLocked(true)
+                .createdBy(creator.getId())
                 .build();
 
         userRepository.save(newUser);

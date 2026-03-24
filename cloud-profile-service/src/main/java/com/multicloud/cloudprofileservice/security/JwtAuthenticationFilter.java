@@ -34,9 +34,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain)
             throws ServletException, IOException {
 
+        String path = request.getServletPath();
+
+        if (path.contains("swagger-ui") ||
+                path.contains("v3/api-docs")) {
+
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // Gateway forwards these headers after validating the token
         String userEmail = request.getHeader("X-User-Email");
         String userRole  = request.getHeader("X-User-Role");
+
 
         // Fallback: also accept raw Bearer token (direct calls without Gateway)
         if (userEmail == null) {

@@ -30,7 +30,6 @@ public class OciCredentialValidator implements CloudCredentialValidator {
             String privateKeyContent = new String(
                     request.getPrivateKey().getBytes(), StandardCharsets.UTF_8);
 
-            // ── Step 1: Build OCI AuthProvider from submitted fields ─────────
             var authProvider = SimpleAuthenticationDetailsProvider.builder()
                     .tenantId(request.getTenancyOcid())
                     .userId(request.getUserOcid())
@@ -40,7 +39,6 @@ public class OciCredentialValidator implements CloudCredentialValidator {
                             privateKeyContent.getBytes(StandardCharsets.UTF_8)))
                     .build();
 
-            // ── Step 2: Call Identity API — fails on bad credentials ─────────
             try (IdentityClient identityClient = IdentityClient.builder()
                     .build(authProvider)) {
 
@@ -54,7 +52,6 @@ public class OciCredentialValidator implements CloudCredentialValidator {
                                 .userId(request.getUserOcid())
                                 .build());
 
-                // ── Step 3: Extract details ──────────────────────────────────
                 Map<String, String> details = new HashMap<>();
                 details.put("tenancyOcid",  request.getTenancyOcid());
                 details.put("tenancyName",  tenancyResp.getTenancy().getName());

@@ -27,7 +27,6 @@ public class OciStorageAdapter implements CloudStorageAdapter {
     @Override
     public CloudProvider getSupportedProvider() { return CloudProvider.OCI; }
 
-    // ─── Build OCI ObjectStorage client by decrypting the stored private key ───
 
     private ObjectStorageClient buildClient(String profileId) {
         var details = ociRepo.findByProfileId(profileId)

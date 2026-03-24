@@ -52,6 +52,9 @@ public class User implements UserDetails {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column
+    private String createdBy;
+
     @PrePersist
     protected void onCreate() { this.createdAt = LocalDateTime.now(); }
 

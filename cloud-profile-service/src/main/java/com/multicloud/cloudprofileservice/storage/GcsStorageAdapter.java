@@ -22,14 +22,13 @@ public class GcsStorageAdapter implements CloudStorageAdapter {
     @Override
     public CloudProvider getSupportedProvider() { return CloudProvider.GCP; }
 
-    // ─── Build GCS client by decrypting the stored service account key ───
 
     private Storage buildStorageClient(String profileId) {
         var details = gcpRepo.findByProfileId(profileId)
                 .orElseThrow(() -> new RuntimeException(
                         "GCP profile details not found for profile: " + profileId));
 
-        // Decrypt key in memory — never logged or persisted again
+
         String rawKey = encryptionService.decrypt(details.getEncryptedServiceAccountKey());
 
         try {

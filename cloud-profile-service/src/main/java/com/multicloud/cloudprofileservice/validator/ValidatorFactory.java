@@ -17,7 +17,6 @@ public class ValidatorFactory {
 
     private final Map<CloudProvider, CloudCredentialValidator> validators;
 
-    // Spring injects all CloudCredentialValidator beans automatically
     public ValidatorFactory(List<CloudCredentialValidator> validatorList) {
         this.validators = validatorList.stream()
                 .collect(Collectors.toMap(
