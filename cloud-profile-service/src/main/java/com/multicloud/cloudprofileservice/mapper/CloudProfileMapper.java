@@ -4,17 +4,16 @@ import com.multicloud.cloudprofileservice.dto.response.CloudProfileResponse;
 import com.multicloud.cloudprofileservice.entity.CloudProfile;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
-/**
- * Manual mapper — avoids MapStruct complexity for the dynamic "details" map.
- * Never maps any encrypted key fields into the response.
- */
 @Component
 public class CloudProfileMapper {
 
     public CloudProfileResponse toResponse(CloudProfile profile,
-                                           Map<String, String> extractedDetails) {
+                                           Map<String, String> details,
+                                           List<String> buckets,
+                                           String connectionMessage) {
         return CloudProfileResponse.builder()
                 .id(profile.getId())
                 .profileName(profile.getProfileName())
@@ -24,8 +23,10 @@ public class CloudProfileMapper {
                 .validationError(profile.getValidationError())
                 .lastValidatedAt(profile.getLastValidatedAt())
                 .createdAt(profile.getCreatedAt())
-                .ownerId(profile.getOwnerId())          // ← added
-                .details(extractedDetails)
+                .ownerId(profile.getOwnerId())
+                .details(details)
+                .buckets(buckets)
+                .connectionMessage(connectionMessage)
                 .build();
     }
 }

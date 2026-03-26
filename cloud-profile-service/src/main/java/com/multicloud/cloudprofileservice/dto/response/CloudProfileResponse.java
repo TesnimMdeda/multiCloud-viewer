@@ -2,6 +2,7 @@ package com.multicloud.cloudprofileservice.dto.response;
 
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Data
@@ -10,16 +11,22 @@ public class CloudProfileResponse {
 
     private String id;
     private String profileName;
-    private String provider;            // "GCP", "OCI"
+    private String provider;
     private String region;
-    private String status;              // VALID / INVALID / PENDING_VALIDATION
-    private String validationError;     // null if valid
+    private String status;
+    private String validationError;
     private LocalDateTime lastValidatedAt;
     private LocalDateTime createdAt;
-
-    /** The user (email) who created this profile — taken from the JWT at creation time. */
     private String ownerId;
 
-    /** Provider-specific details (safe — never exposes raw keys). */
+    /** Provider-specific metadata (safe — never exposes raw keys). */
     private Map<String, String> details;
+
+    /**
+     * Real resources fetched at creation time to confirm the credentials
+     * have actual permissions. Empty list = connected but no resources yet.
+     * Null = resource fetch not attempted.
+     */
+    private List<String> buckets;
+    private String connectionMessage;
 }
