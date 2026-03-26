@@ -37,6 +37,6 @@ public class OciProfileDetails {
     private String encryptedPrivateKey; // AES-256 encrypted .pem
 
     @Column
-    private String compartmentId; // root compartment = tenancyOcid
+    private String compartmentId;
 }
 

@@ -10,10 +10,6 @@ public class TokenGenerator {
 
     private final SecureRandom secureRandom = new SecureRandom();
 
-    /**
-     * Generates a cryptographically-secure URL-safe token.
-     * @return 64-character URL-safe base64 token
-     */
     public String generateSecureToken() {
         byte[] tokenBytes = new byte[48];
         secureRandom.nextBytes(tokenBytes);

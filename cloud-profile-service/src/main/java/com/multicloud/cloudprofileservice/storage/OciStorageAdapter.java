@@ -4,7 +4,6 @@ import com.oracle.bmc.auth.SimpleAuthenticationDetailsProvider;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
 import com.oracle.bmc.objectstorage.requests.*;
 import com.oracle.bmc.objectstorage.model.BucketSummary;
-import com.oracle.bmc.objectstorage.model.ObjectSummary;
 import com.multicloud.cloudprofileservice.entity.CloudProvider;
 import com.multicloud.cloudprofileservice.entity.OciProfileDetails;
 import com.multicloud.cloudprofileservice.repository.OciProfileDetailsRepository;

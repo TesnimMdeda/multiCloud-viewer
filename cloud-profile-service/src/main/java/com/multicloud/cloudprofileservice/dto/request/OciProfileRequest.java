@@ -28,6 +28,10 @@ public class OciProfileRequest {
             message = "Invalid fingerprint format (aa:bb:cc:... expected)")
     private String fingerprint;
 
+    @Pattern(regexp = "ocid1\\.(compartment|tenancy)\\.oc1\\..+",
+            message = "Invalid Compartment OCID format")
+    private String compartmentId;
+
     @NotNull(message = "Private key file is required")
-    private MultipartFile privateKey; // .pem file upload
+    private MultipartFile privateKey;
 }

@@ -8,10 +8,6 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * Automatically collects all CloudCredentialValidator beans.
- * Adding a new provider = add a new @Component validator. Zero changes here.
- */
 @Component
 public class ValidatorFactory {
 

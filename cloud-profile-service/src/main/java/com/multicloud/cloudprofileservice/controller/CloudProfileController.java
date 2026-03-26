@@ -21,43 +21,156 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/cloud/profiles")
 @RequiredArgsConstructor
-@Tag(name = "Cloud Profiles", description = "Manage cloud provider credentials")
+@Tag(name = "Cloud Profiles", description = "Manage GCP and OCI cloud provider credentials")
 public class CloudProfileController {
 
     private final CloudProfileService profileService;
 
-    // ─── GCP ────────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    // GCP
+    // ════════════════════════════════════════════════════════════════
 
-    @PostMapping(value = "/gcp", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Add GCP profile — validates service account key against GCP SDK")
+    @PostMapping(value = "/gcp/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(
+            operationId = "createGcpProfile",
+            summary     = "createGcpProfile",
+            description = "Validates the service account JSON key against the GCP SDK, "
+                    + "encrypts it with AES-256-GCM and persists the profile. "
+                    + "Returns the created profile with ownerId set to the authenticated user."
+    )
     public ResponseEntity<ApiResponse<CloudProfileResponse>> createGcpProfile(
             @Valid @ModelAttribute GcpProfileRequest request,
             @AuthenticationPrincipal UserDetails user) {
 
-        var result = profileService.createGcpProfile(request, user.getUsername());
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(result,
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        profileService.createGcpProfile(request, user.getUsername()),
                         "GCP profile created and validated successfully"));
     }
 
-    // ─── OCI ────────────────────────────────────────────────────────────────
+    @GetMapping("/gcp/getAll")
+    @Operation(
+            operationId = "getAllGcpProfiles",
+            summary     = "getAllGcpProfiles",
+            description = "Returns the list of all GCP profiles owned by the authenticated user."
+    )
+    public ResponseEntity<ApiResponse<List<CloudProfileResponse>>> getAllGcpProfiles(
+            @AuthenticationPrincipal UserDetails user) {
 
-    @PostMapping(value = "/oci", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Add OCI profile — validates key/fingerprint against OCI SDK")
+        return ResponseEntity.ok(ApiResponse.success(
+                profileService.getGcpProfilesByOwner(user.getUsername()),
+                "GCP profiles retrieved"));
+    }
+
+    @GetMapping("/gcp/getById/{profileId}")
+    @Operation(
+            operationId = "getGcpProfileById",
+            summary     = "getGcpProfileById",
+            description = "Returns a single GCP profile by its ID. Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<CloudProfileResponse>> getGcpProfileById(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                profileService.getGcpProfileById(profileId, user.getUsername()),
+                "GCP profile retrieved"));
+    }
+
+    @DeleteMapping("/gcp/delete/{profileId}")
+    @Operation(
+            operationId = "deleteGcpProfileById",
+            summary     = "deleteGcpProfileById",
+            description = "Permanently deletes the GCP profile and its AES-encrypted service account key. "
+                    + "Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<Void>> deleteGcpProfileById(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        profileService.deleteGcpProfile(profileId, user.getUsername());
+        return ResponseEntity.ok(ApiResponse.success(null, "GCP profile deleted"));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // OCI
+    // ════════════════════════════════════════════════════════════════
+
+    @PostMapping(value = "/oci/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(
+            operationId = "createOciProfile",
+            summary     = "createOciProfile",
+            description = "Validates the private key (.pem) and fingerprint against the OCI Identity SDK. "
+                    + "compartmentId is optional — omit it to use the root compartment (tenancyOcid). "
+                    + "The private key is encrypted with AES-256-GCM before storage."
+    )
     public ResponseEntity<ApiResponse<CloudProfileResponse>> createOciProfile(
             @Valid @ModelAttribute OciProfileRequest request,
             @AuthenticationPrincipal UserDetails user) {
 
-        var result = profileService.createOciProfile(request, user.getUsername());
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(result, "OCI profile created successfully"));
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(ApiResponse.success(
+                        profileService.createOciProfile(request, user.getUsername()),
+                        "OCI profile created successfully"));
     }
 
-    // ─── LIST ALL PROFILES FOR CURRENT USER ─────────────────────────────────
+    @GetMapping("/oci/getAll")
+    @Operation(
+            operationId = "getAllOciProfiles",
+            summary     = "getAllOciProfiles",
+            description = "Returns the list of all OCI profiles owned by the authenticated user."
+    )
+    public ResponseEntity<ApiResponse<List<CloudProfileResponse>>> getAllOciProfiles(
+            @AuthenticationPrincipal UserDetails user) {
 
-    @GetMapping
-    @Operation(summary = "List all profiles owned by the authenticated user")
-    public ResponseEntity<ApiResponse<List<CloudProfileResponse>>> getMyProfiles(
+        return ResponseEntity.ok(ApiResponse.success(
+                profileService.getOciProfilesByOwner(user.getUsername()),
+                "OCI profiles retrieved"));
+    }
+
+    @GetMapping("/oci/getById/{profileId}")
+    @Operation(
+            operationId = "getOciProfileById",
+            summary     = "getOciProfileById",
+            description = "Returns a single OCI profile by its ID. Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<CloudProfileResponse>> getOciProfileById(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                profileService.getOciProfileById(profileId, user.getUsername()),
+                "OCI profile retrieved"));
+    }
+
+    @DeleteMapping("/oci/delete/{profileId}")
+    @Operation(
+            operationId = "deleteOciProfileById",
+            summary     = "deleteOciProfileById",
+            description = "Permanently deletes the OCI profile and its AES-encrypted private key. "
+                    + "Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<Void>> deleteOciProfileById(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        profileService.deleteOciProfile(profileId, user.getUsername());
+        return ResponseEntity.ok(ApiResponse.success(null, "OCI profile deleted"));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // SHARED — any provider
+    // ════════════════════════════════════════════════════════════════
+
+    @GetMapping("/getAll")
+    @Operation(
+            operationId = "getAllProfiles",
+            summary     = "getAllProfiles",
+            description = "Returns every GCP and OCI profile owned by the authenticated user in a single list."
+    )
+    public ResponseEntity<ApiResponse<List<CloudProfileResponse>>> getAllProfiles(
             @AuthenticationPrincipal UserDetails user) {
 
         return ResponseEntity.ok(ApiResponse.success(
@@ -65,11 +178,30 @@ public class CloudProfileController {
                 "Profiles retrieved"));
     }
 
-    // ─── DELETE ─────────────────────────────────────────────────────────────
+    @GetMapping("/getById/{profileId}")
+    @Operation(
+            operationId = "getProfileById",
+            summary     = "getProfileById",
+            description = "Returns a single profile by ID regardless of provider (GCP or OCI). "
+                    + "Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<CloudProfileResponse>> getProfileById(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
 
-    @DeleteMapping("/{profileId}")
-    @Operation(summary = "Delete a cloud profile (owner only)")
-    public ResponseEntity<ApiResponse<Void>> deleteProfile(
+        return ResponseEntity.ok(ApiResponse.success(
+                profileService.getProfileById(profileId, user.getUsername()),
+                "Profile retrieved"));
+    }
+
+    @DeleteMapping("/delete/{profileId}")
+    @Operation(
+            operationId = "deleteProfileById",
+            summary     = "deleteProfileById",
+            description = "Deletes any profile by ID regardless of provider (GCP or OCI). "
+                    + "Returns 403 if the caller is not the owner."
+    )
+    public ResponseEntity<ApiResponse<Void>> deleteProfileById(
             @PathVariable String profileId,
             @AuthenticationPrincipal UserDetails user) {
 

@@ -24,6 +24,7 @@ public class CloudProfileMapper {
                 .validationError(profile.getValidationError())
                 .lastValidatedAt(profile.getLastValidatedAt())
                 .createdAt(profile.getCreatedAt())
+                .ownerId(profile.getOwnerId())          // ← added
                 .details(extractedDetails)
                 .build();
     }

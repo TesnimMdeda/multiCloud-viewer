@@ -1,5 +1,6 @@
 package com.multicloud.cloudprofileservice.service.impl;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -15,16 +16,36 @@ import java.util.Base64;
 @Service
 public class EncryptionService {
 
-    private static final String ALGORITHM    = "AES/GCM/NoPadding";
-    private static final int    GCM_IV_LENGTH  = 12;  // 96 bits
-    private static final int    GCM_TAG_LENGTH = 128; // bits
+    private static final String ALGORITHM     = "AES/GCM/NoPadding";
+    private static final int    GCM_IV_LENGTH = 12;   // 96 bits
+    private static final int    GCM_TAG_LENGTH = 128;  // bits
+    private static final int    REQUIRED_KEY_BYTES = 32; // AES-256
 
     @Value("${encryption.key}")
-    private String encryptionKey; // must be exactly 32 characters (256-bit)
+    private String encryptionKey;
+
+    /**
+     * Fail fast at startup if the key is the wrong length.
+     * AES-256 requires exactly 32 bytes (256 bits).
+     * AES-128 would require 16, AES-192 would require 24 — we only support 256.
+     */
+    @PostConstruct
+    public void validateKey() {
+        int len = encryptionKey.getBytes(StandardCharsets.UTF_8).length;
+        if (len != REQUIRED_KEY_BYTES) {
+            throw new IllegalStateException(
+                    "Invalid encryption.key length: " + len + " bytes. " +
+                            "AES-256 requires exactly 32 bytes. " +
+                            "Current key: \"" + encryptionKey + "\" — " +
+                            "add or remove " + Math.abs(REQUIRED_KEY_BYTES - len) +
+                            " character(s).");
+        }
+        log.info("EncryptionService initialized — AES-256-GCM key validated (32 bytes)");
+    }
 
     /**
      * Encrypts plaintext using AES-256-GCM.
-     * Returns Base64(iv + ciphertext + auth-tag) — IV is prepended for decryption.
+     * Returns Base64( IV[12] + ciphertext + auth-tag[16] ).
      */
     public String encrypt(String plaintext) {
         try {
@@ -34,23 +55,27 @@ public class EncryptionService {
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             SecretKeySpec keySpec = new SecretKeySpec(
                     encryptionKey.getBytes(StandardCharsets.UTF_8), "AES");
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec,
+                    new GCMParameterSpec(GCM_TAG_LENGTH, iv));
 
-            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            byte[] ciphertext = cipher.doFinal(
+                    plaintext.getBytes(StandardCharsets.UTF_8));
 
+            // Prepend IV so decrypt can extract it
             byte[] combined = new byte[iv.length + ciphertext.length];
-            System.arraycopy(iv, 0, combined, 0, iv.length);
-            System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
+            System.arraycopy(iv,         0, combined, 0,          iv.length);
+            System.arraycopy(ciphertext, 0, combined, iv.length,  ciphertext.length);
 
             return Base64.getEncoder().encodeToString(combined);
+
         } catch (Exception e) {
-            throw new RuntimeException("Encryption failed", e);
+            throw new RuntimeException("Encryption failed: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Decrypts a Base64(iv + ciphertext) string produced by {@link #encrypt}.
-     * Decrypted value lives only in memory — never logged or persisted again.
+     * Decrypts a Base64( IV + ciphertext ) string produced by {@link #encrypt}.
+     * The plaintext lives only in memory — never logged or re-persisted.
      */
     public String decrypt(String encryptedBase64) {
         try {
@@ -63,11 +88,13 @@ public class EncryptionService {
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             SecretKeySpec keySpec = new SecretKeySpec(
                     encryptionKey.getBytes(StandardCharsets.UTF_8), "AES");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_LENGTH, iv));
+            cipher.init(Cipher.DECRYPT_MODE, keySpec,
+                    new GCMParameterSpec(GCM_TAG_LENGTH, iv));
 
             return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+
         } catch (Exception e) {
-            throw new RuntimeException("Decryption failed", e);
+            throw new RuntimeException("Decryption failed: " + e.getMessage(), e);
         }
     }
 }

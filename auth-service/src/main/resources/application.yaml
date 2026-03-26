@@ -40,7 +40,7 @@ jwt:
   reset-token-expiration: 3600000
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  frontend-url: ${FRONTEND_URL:http://localhost:4200}
 
 springdoc:
   api-docs:

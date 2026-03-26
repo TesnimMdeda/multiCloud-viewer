@@ -10,6 +10,8 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -24,31 +26,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
 
-    // NOTE: No UserDetailsService here — this service validates the JWT
-    // directly using the shared secret. User data comes from the token claims
-    // forwarded by the Gateway (X-User-Email, X-User-Role headers).
-
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain)
             throws ServletException, IOException {
 
-        String path = request.getServletPath();
-
-        if (path.contains("swagger-ui") ||
-                path.contains("v3/api-docs")) {
-
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // Gateway forwards these headers after validating the token
+        // ── 1. Try headers injected by the API Gateway ───────────────────────
         String userEmail = request.getHeader("X-User-Email");
         String userRole  = request.getHeader("X-User-Role");
 
-
-        // Fallback: also accept raw Bearer token (direct calls without Gateway)
+        // ── 2. Fallback: parse the raw Bearer token (direct calls / Swagger) ─
         if (userEmail == null) {
             String authHeader = request.getHeader("Authorization");
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -57,6 +45,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     if (jwtService.isTokenValid(token)) {
                         userEmail = jwtService.extractUsername(token);
                         userRole  = jwtService.extractRole(token);
+                        log.debug("JWT parsed directly — user: {}, role: {}", userEmail, userRole);
+                    } else {
+                        log.warn("JWT token is expired or invalid");
                     }
                 } catch (Exception e) {
                     log.warn("JWT parsing failed: {}", e.getMessage());
@@ -64,15 +55,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
 
-        if (userEmail != null &&
-                SecurityContextHolder.getContext().getAuthentication() == null) {
+        // ── 3. Build authentication principal if we resolved a user ──────────
+        if (userEmail != null
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            var authority = new SimpleGrantedAuthority(
-                    "ROLE_" + (userRole != null ? userRole : "CLIENT"));
+            String role = (userRole != null && !userRole.isBlank()) ? userRole : "CLIENT";
+
+            // Build a UserDetails so @AuthenticationPrincipal resolves correctly
+            UserDetails userDetails = User.builder()
+                    .username(userEmail)
+                    .password("")          // stateless — no password check needed
+                    .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + role)))
+                    .build();
+
             var auth = new UsernamePasswordAuthenticationToken(
-                    userEmail, null, List.of(authority));
+                    userDetails, null, userDetails.getAuthorities());
             auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(auth);
+
+            log.debug("Authentication set for user: {} with role: {}", userEmail, role);
         }
 
         filterChain.doFilter(request, response);
