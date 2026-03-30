@@ -24,6 +24,7 @@ eureka:
     enabled: false
     service-url:
       defaultZone: http://localhost:8761/eureka/
+
   instance:
     prefer-ip-address: true
     instance-id: ${spring.application.name}:${server.port}
@@ -33,7 +34,7 @@ jwt:
 
 encryption:
   key: ${ENCRYPTION_KEY:MySuperSecretKey_2026_Secure!@#$}
-  algorithm: AES/GCB/NoPadding
+  algorithm: AES/GCM/NoPadding
 
 springdoc:
   swagger-ui:

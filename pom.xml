@@ -26,6 +26,7 @@
     <module>eureka-server</module>
     <module>api-gateway</module>
     <module>auth-service</module>
+    <module>cloud-profile-service</module>
   </modules>
 
   <!-- Global properties -->

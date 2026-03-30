@@ -103,11 +103,6 @@
             <artifactId>oci-java-sdk-common-httpclient-jersey3</artifactId>
             <version>${oci.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.oracle.oci.sdk</groupId>
-            <artifactId>oci-java-sdk-shaded-full</artifactId>
-            <version>3.41.0</version>
-        </dependency>
         <!-- ═══ JWT (validate bearer from Gateway / direct calls) ═══ -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -174,8 +169,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <release>17</release>
                     <annotationProcessorPaths>
                         <!-- Lombok MUST come before MapStruct -->
                         <path>
@@ -185,6 +179,27 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.sonarsource.scanner.maven</groupId>
+                <artifactId>sonar-maven-plugin</artifactId>
+                <version>3.10.0.2594</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
