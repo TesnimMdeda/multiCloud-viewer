@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: cloud-profile-service
+  cloud:
+    discovery:
+      client:
+        composite-indicator:
+          enabled: false
 
   datasource:
     url: jdbc:postgresql://localhost:5432/cloud_profiles_db
@@ -21,13 +26,17 @@ spring:
 
 eureka:
   client:
-    enabled: false
+    enabled: true
+    register-with-eureka: true
+    fetch-registry: true
     service-url:
       defaultZone: http://localhost:8761/eureka/
-
   instance:
     prefer-ip-address: true
     instance-id: ${spring.application.name}:${server.port}
+
+eureka.client.webclient.enabled: false
+
 
 jwt:
   secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}

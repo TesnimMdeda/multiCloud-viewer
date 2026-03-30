@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: cloud-profile-service
+
+eureka:
+  client:
+    enabled: false
