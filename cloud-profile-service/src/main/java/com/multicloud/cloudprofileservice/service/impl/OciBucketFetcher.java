@@ -9,7 +9,6 @@ import com.multicloud.cloudprofileservice.repository.OciProfileDetailsRepository
 import com.multicloud.cloudprofileservice.service.BucketFetcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -17,8 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Slf4j
-@Component
-@Primary
+@Component("ociBucketFetcher")
 @RequiredArgsConstructor
 public class OciBucketFetcher implements BucketFetcher {
 

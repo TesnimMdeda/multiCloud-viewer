@@ -8,8 +8,11 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 @EnableDiscoveryClient
 public class CloudProfileServiceApplication {
 
+    static {
+        System.setProperty("oci.sdk.http.provider", "jersey3");
+    }
+
     public static void main(String[] args) {
         SpringApplication.run(CloudProfileServiceApplication.class, args);
     }
-
 }

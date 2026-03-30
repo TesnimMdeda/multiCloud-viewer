@@ -14,7 +14,6 @@ import com.multicloud.cloudprofileservice.repository.OciProfileDetailsRepository
 import com.multicloud.cloudprofileservice.service.BucketFetcher;
 import com.multicloud.cloudprofileservice.service.OciProfileService;
 import com.multicloud.cloudprofileservice.validator.ValidatorFactory;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -29,7 +28,6 @@ import java.util.Map;
 @Slf4j
 @Service
 @Transactional
-@RequiredArgsConstructor
 public class OciProfileServiceImpl implements OciProfileService {
 
     private final CloudProfileRepository      profileRepository;
@@ -37,8 +35,22 @@ public class OciProfileServiceImpl implements OciProfileService {
     private final ValidatorFactory            validatorFactory;
     private final EncryptionService           encryptionService;
     private final CloudProfileMapper          mapper;
-    @Qualifier("ociBucketFetcher")
     private final BucketFetcher               bucketFetcher;
+
+    public OciProfileServiceImpl(
+            CloudProfileRepository profileRepository,
+            OciProfileDetailsRepository ociRepo,
+            ValidatorFactory validatorFactory,
+            EncryptionService encryptionService,
+            CloudProfileMapper mapper,
+            @Qualifier("ociBucketFetcher") BucketFetcher bucketFetcher) {
+        this.profileRepository = profileRepository;
+        this.ociRepo           = ociRepo;
+        this.validatorFactory  = validatorFactory;
+        this.encryptionService = encryptionService;
+        this.mapper            = mapper;
+        this.bucketFetcher     = bucketFetcher;
+    }
 
     @Override
     public CloudProfileResponse createProfile(OciProfileRequest request, String ownerId) {

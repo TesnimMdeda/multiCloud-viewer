@@ -14,7 +14,6 @@ import com.multicloud.cloudprofileservice.repository.GcpProfileDetailsRepository
 import com.multicloud.cloudprofileservice.service.BucketFetcher;
 import com.multicloud.cloudprofileservice.service.GcpProfileService;
 import com.multicloud.cloudprofileservice.validator.ValidatorFactory;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -29,7 +28,6 @@ import java.util.Map;
 @Slf4j
 @Service
 @Transactional
-@RequiredArgsConstructor
 public class GcpProfileServiceImpl implements GcpProfileService {
 
     private final CloudProfileRepository      profileRepository;
@@ -37,8 +35,22 @@ public class GcpProfileServiceImpl implements GcpProfileService {
     private final ValidatorFactory            validatorFactory;
     private final EncryptionService           encryptionService;
     private final CloudProfileMapper          mapper;
-    @Qualifier("gcsBucketFetcher")
     private final BucketFetcher               bucketFetcher;
+
+    public GcpProfileServiceImpl(
+            CloudProfileRepository profileRepository,
+            GcpProfileDetailsRepository gcpRepo,
+            ValidatorFactory validatorFactory,
+            EncryptionService encryptionService,
+            CloudProfileMapper mapper,
+            @Qualifier("gcsBucketFetcher") BucketFetcher bucketFetcher) {
+        this.profileRepository = profileRepository;
+        this.gcpRepo           = gcpRepo;
+        this.validatorFactory  = validatorFactory;
+        this.encryptionService = encryptionService;
+        this.mapper            = mapper;
+        this.bucketFetcher     = bucketFetcher;
+    }
 
     @Override
     public CloudProfileResponse createProfile(GcpProfileRequest request, String ownerId) {
