@@ -25,16 +25,14 @@ public class OciProfileDetails {
     @Column(nullable = false)
     private String fingerprint;
 
-    // ─── Fields auto-extracted after OCI validation ───
+    @Column
+    private String tenancyName;
 
     @Column
-    private String tenancyName; // from Identity SDK
-
-    @Column
-    private String homeRegion;  // from Identity SDK
+    private String homeRegion;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String encryptedPrivateKey; // AES-256 encrypted .pem
+    private String encryptedPrivateKey;
 
     @Column
     private String compartmentId;

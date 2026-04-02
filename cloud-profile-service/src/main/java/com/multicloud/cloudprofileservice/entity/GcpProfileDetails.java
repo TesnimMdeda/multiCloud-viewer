@@ -17,22 +17,21 @@ public class GcpProfileDetails {
     private CloudProfile profile;
 
     @Column(nullable = false)
-    private String projectId; // e.g. "my-project-123"
+    private String projectId;
 
-    // ─── Fields auto-extracted from the Service Account JSON key ───
-
-    @Column(nullable = false)
-    private String serviceAccountEmail; // from key: "client_email"
 
     @Column(nullable = false)
-    private String clientId; // from key: "client_id"
+    private String serviceAccountEmail;
+
+    @Column(nullable = false)
+    private String clientId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String encryptedServiceAccountKey; // AES-256 encrypted JSON
+    private String encryptedServiceAccountKey;
 
     @Column(nullable = false)
-    private String keyType; // "service_account"
+    private String keyType;
 
     @Column
-    private String tokenUri; // from key: "token_uri"
+    private String tokenUri;
 }

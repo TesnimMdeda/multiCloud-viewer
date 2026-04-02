@@ -8,7 +8,7 @@ import com.multicloud.cloudprofileservice.entity.CloudProvider;
 import com.multicloud.cloudprofileservice.entity.OciProfileDetails;
 import com.multicloud.cloudprofileservice.exception.ProfileNotFoundException;
 import com.multicloud.cloudprofileservice.exception.UnauthorizedActionException;
-import com.multicloud.cloudprofileservice.mapper.CloudProfileMapper;
+import com.multicloud.cloudprofileservice.mapper.OciProfileMapper;
 import com.multicloud.cloudprofileservice.repository.CloudProfileRepository;
 import com.multicloud.cloudprofileservice.repository.OciProfileDetailsRepository;
 import com.multicloud.cloudprofileservice.service.BucketFetcher;
@@ -34,7 +34,7 @@ public class OciProfileServiceImpl implements OciProfileService {
     private final OciProfileDetailsRepository ociRepo;
     private final ValidatorFactory            validatorFactory;
     private final EncryptionService           encryptionService;
-    private final CloudProfileMapper          mapper;
+    private final OciProfileMapper            mapper;
     private final BucketFetcher               bucketFetcher;
 
     public OciProfileServiceImpl(
@@ -42,7 +42,7 @@ public class OciProfileServiceImpl implements OciProfileService {
             OciProfileDetailsRepository ociRepo,
             ValidatorFactory validatorFactory,
             EncryptionService encryptionService,
-            CloudProfileMapper mapper,
+            OciProfileMapper mapper,
             @Qualifier("ociBucketFetcher") BucketFetcher bucketFetcher) {
         this.profileRepository = profileRepository;
         this.ociRepo           = ociRepo;

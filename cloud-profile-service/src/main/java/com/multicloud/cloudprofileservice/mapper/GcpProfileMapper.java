@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-public class CloudProfileMapper {
+public class GcpProfileMapper {
 
     public CloudProfileResponse toResponse(CloudProfile profile,
                                            Map<String, String> details,

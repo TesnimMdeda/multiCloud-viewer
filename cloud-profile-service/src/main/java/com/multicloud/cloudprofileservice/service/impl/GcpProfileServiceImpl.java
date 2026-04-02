@@ -8,7 +8,7 @@ import com.multicloud.cloudprofileservice.entity.CloudProvider;
 import com.multicloud.cloudprofileservice.entity.GcpProfileDetails;
 import com.multicloud.cloudprofileservice.exception.ProfileNotFoundException;
 import com.multicloud.cloudprofileservice.exception.UnauthorizedActionException;
-import com.multicloud.cloudprofileservice.mapper.CloudProfileMapper;
+import com.multicloud.cloudprofileservice.mapper.GcpProfileMapper;
 import com.multicloud.cloudprofileservice.repository.CloudProfileRepository;
 import com.multicloud.cloudprofileservice.repository.GcpProfileDetailsRepository;
 import com.multicloud.cloudprofileservice.service.BucketFetcher;
@@ -34,7 +34,7 @@ public class GcpProfileServiceImpl implements GcpProfileService {
     private final GcpProfileDetailsRepository gcpRepo;
     private final ValidatorFactory            validatorFactory;
     private final EncryptionService           encryptionService;
-    private final CloudProfileMapper          mapper;
+    private final GcpProfileMapper            mapper;
     private final BucketFetcher               bucketFetcher;
 
     public GcpProfileServiceImpl(
@@ -42,7 +42,7 @@ public class GcpProfileServiceImpl implements GcpProfileService {
             GcpProfileDetailsRepository gcpRepo,
             ValidatorFactory validatorFactory,
             EncryptionService encryptionService,
-            CloudProfileMapper mapper,
+            GcpProfileMapper mapper,
             @Qualifier("gcsBucketFetcher") BucketFetcher bucketFetcher) {
         this.profileRepository = profileRepository;
         this.gcpRepo           = gcpRepo;

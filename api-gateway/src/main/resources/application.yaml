@@ -4,28 +4,52 @@ server:
 spring:
   application:
     name: api-gateway
-    cloud:
-      gateway:
-        globalcors:
-          corsConfigurations:
-            '[/**]':
-              allowedOrigins:
-                - "http://localhost:4200"
-              allowedMethods:
-                - GET
-                - POST
-                - PUT
-                - PATCH
-                - DELETE
-                - OPTIONS
-              allowedHeaders:
-                - "*"
-              allowedCredentials: true
-              maxAge: 3600
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:4200"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            maxAge: 3600
+      routes:
+        - id: auth-public
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/auth/login,/api/auth/forgot-password,/api/auth/reset-password
+
+        - id: auth-protected
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: JwtAuthFilter
+              args: {}
+
+        - id: cloud-profile-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/cloud/**
+          filters:
+            - name: JwtAuthFilter
+              args: {}
+
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
 
 jwt:
   secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
@@ -33,4 +57,3 @@ jwt:
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG
-    org.springframework.cloud.gateway.handler.predicate: TRACE
