@@ -62,6 +62,18 @@ public class GcpController {
                 "GCP profile retrieved"));
     }
 
+    @GetMapping("/internal/{profileId}/details")
+    @Operation(summary = "Internal: Get full GCP profile details (including decrypted key)",
+            description = "Used by other microservices. Returns 403 if the caller is not the owner.")
+    public ResponseEntity<ApiResponse<com.multicloud.cloudprofileservice.dto.response.GcpProfileDetailsResponse>> getInternalDetails(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                gcpProfileService.getGcpProfileDetails(profileId, user.getUsername()),
+                "GCP profile full details retrieved"));
+    }
+
     @GetMapping("/{profileId}/validate")
     @Operation(summary = "Validate a GCP profile by listing its real buckets",
             description = "Decrypts the stored key and calls the GCS API. Returns bucket names if credentials are valid.")

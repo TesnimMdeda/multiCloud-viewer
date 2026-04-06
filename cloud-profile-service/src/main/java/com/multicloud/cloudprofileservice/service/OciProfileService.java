@@ -13,5 +13,7 @@ public interface OciProfileService {
 
     CloudProfileResponse getProfileById(String profileId, String ownerId);
 
+    com.multicloud.cloudprofileservice.dto.response.OciProfileDetailsResponse getOciProfileDetails(String profileId, String ownerId);
+
     void deleteProfile(String profileId, String ownerId);
 }

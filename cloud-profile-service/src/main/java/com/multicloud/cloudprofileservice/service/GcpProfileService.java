@@ -13,5 +13,7 @@ public interface GcpProfileService {
 
     CloudProfileResponse getProfileById(String profileId, String ownerId);
 
+    com.multicloud.cloudprofileservice.dto.response.GcpProfileDetailsResponse getGcpProfileDetails(String profileId, String ownerId);
+
     void deleteProfile(String profileId, String ownerId);
 }

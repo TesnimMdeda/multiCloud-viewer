@@ -1,0 +1,57 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: resource-management-service
+  cloud:
+    discovery:
+      client:
+        composite-indicator:
+          enabled: false
+
+app:
+  services:
+    cloud-profile-url: ${CLOUD_PROFILE_URL:http://localhost:8082}
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 5000
+            readTimeout: 5000
+            loggerLevel: full
+
+eureka:
+  client:
+    enabled: false
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    enabled: false
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+
+eureka.client.webclient.enabled: false
+
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+
+springdoc:
+  swagger-ui:
+    path: /api/resources/swagger-ui.html
+
+encryption:
+  key: ${ENCRYPTION_KEY:MySuperSecretKey_2026_Secure!@#$}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.multicloud.resourcemanagementservice: DEBUG
+    com.google.cloud: WARN

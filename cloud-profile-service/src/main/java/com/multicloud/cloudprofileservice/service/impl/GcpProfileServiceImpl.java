@@ -119,6 +119,24 @@ public class GcpProfileServiceImpl implements GcpProfileService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public com.multicloud.cloudprofileservice.dto.response.GcpProfileDetailsResponse getGcpProfileDetails(String profileId, String ownerId) {
+        findAndVerifyOwner(profileId, ownerId);
+        GcpProfileDetails details = gcpRepo.findByProfileId(profileId)
+                .orElseThrow(() -> new ProfileNotFoundException("GCP details not found for profile " + profileId));
+
+        return com.multicloud.cloudprofileservice.dto.response.GcpProfileDetailsResponse.builder()
+                .profileId(profileId)
+                .projectId(details.getProjectId())
+                .serviceAccountEmail(details.getServiceAccountEmail())
+                .clientId(details.getClientId())
+                .keyType(details.getKeyType())
+                .tokenUri(details.getTokenUri())
+                .decryptedServiceAccountKey(encryptionService.decrypt(details.getEncryptedServiceAccountKey()))
+                .build();
+    }
+
+    @Override
     public void deleteProfile(String profileId, String ownerId) {
         CloudProfile profile = findAndVerifyOwner(profileId, ownerId);
         profileRepository.delete(profile);

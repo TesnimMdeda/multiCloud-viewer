@@ -45,6 +45,12 @@ public class EmailServiceImpl implements EmailService {
             helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(htmlBody, true);
+            
+            ClassPathResource logo = new ClassPathResource("logo.png");
+            if (logo.exists()) {
+                helper.addInline("logoImage", logo);
+            }
+            
             mailSender.send(message);
             log.info("Email sent to: {}", to);
         } catch (MessagingException e) {
@@ -63,6 +69,7 @@ public class EmailServiceImpl implements EmailService {
             );
             return template.formatted(
                     user.getFirstName(),
+                    link,
                     link,
                     link
             );
@@ -98,6 +105,7 @@ public class EmailServiceImpl implements EmailService {
 
             return template.formatted(
                     user.getFirstName(),
+                    link,
                     link,
                     link
             );

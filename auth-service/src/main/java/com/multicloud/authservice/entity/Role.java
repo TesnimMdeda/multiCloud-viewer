@@ -7,9 +7,9 @@ public enum Role {
 
     public boolean canCreate(Role targetRole) {
         return switch (this) {
-            case SUPER_ADMIN -> targetRole == ADMIN || targetRole == CLIENT;
-            case ADMIN       -> targetRole == CLIENT;
-            case CLIENT      -> false;
+            case SUPER_ADMIN -> true;
+            case ADMIN -> targetRole == CLIENT;
+            case CLIENT -> false;
         };
     }
 }

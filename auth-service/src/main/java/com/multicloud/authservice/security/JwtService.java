@@ -24,18 +24,26 @@ public class JwtService {
     @Value("${jwt.expiration}")
     private long jwtExpiration;
 
+    @Value("${jwt.remember-me-expiration:2592000000}")
+    private long jwtRememberMeExpiration;
+
     public String generateToken(UserDetails userDetails) {
+        return generateToken(userDetails, false);
+    }
+
+    public String generateToken(UserDetails userDetails, boolean rememberMe) {
         Map<String, Object> extraClaims = new HashMap<>();
         if (userDetails instanceof com.multicloud.authservice.entity.User user) {
             extraClaims.put("role", user.getRole().name());
             extraClaims.put("userId", user.getId());
             extraClaims.put("firstName", user.getFirstName());
         }
-        return buildToken(extraClaims, userDetails, jwtExpiration);
+        long expiration = rememberMe ? jwtRememberMeExpiration : jwtExpiration;
+        return buildToken(extraClaims, userDetails, expiration);
     }
 
     private String buildToken(Map<String, Object> extraClaims,
-                              UserDetails userDetails, long expiration) {
+            UserDetails userDetails, long expiration) {
         return Jwts.builder()
                 .claims(extraClaims)
                 .subject(userDetails.getUsername())

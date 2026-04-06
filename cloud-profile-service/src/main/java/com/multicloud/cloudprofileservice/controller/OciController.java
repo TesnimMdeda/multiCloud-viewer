@@ -79,6 +79,18 @@ public class OciController {
                 "OCI credentials are valid"));
     }
 
+    @GetMapping("/internal/{profileId}/details")
+    @Operation(summary = "Internal: Get full OCI profile details (including decrypted private key)",
+            description = "Used by other microservices. Returns 403 if the caller is not the owner.")
+    public ResponseEntity<ApiResponse<com.multicloud.cloudprofileservice.dto.response.OciProfileDetailsResponse>> getInternalDetails(
+            @PathVariable String profileId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        return ResponseEntity.ok(ApiResponse.success(
+                ociProfileService.getOciProfileDetails(profileId, user.getUsername()),
+                "OCI profile full details retrieved"));
+    }
+
     @DeleteMapping("/{profileId}")
     @Operation(summary = "Delete an OCI profile", description = "Returns 403 if the caller is not the owner.")
     public ResponseEntity<ApiResponse<Void>> delete(

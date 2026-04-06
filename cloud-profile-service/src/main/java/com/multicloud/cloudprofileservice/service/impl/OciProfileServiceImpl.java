@@ -133,6 +133,23 @@ public class OciProfileServiceImpl implements OciProfileService {
         log.info("OCI profile {} deleted by owner {}", profileId, ownerId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public com.multicloud.cloudprofileservice.dto.response.OciProfileDetailsResponse getOciProfileDetails(String profileId, String ownerId) {
+        CloudProfile profile = findAndVerifyOwner(profileId, ownerId);
+        OciProfileDetails details = ociRepo.findByProfileId(profileId)
+                .orElseThrow(() -> new ProfileNotFoundException("OCI details not found for profile " + profileId));
+
+        return com.multicloud.cloudprofileservice.dto.response.OciProfileDetailsResponse.builder()
+                .tenancyOcid(details.getTenancyOcid())
+                .userOcid(details.getUserOcid())
+                .fingerprint(details.getFingerprint())
+                .region(profile.getRegion())
+                .compartmentId(details.getCompartmentId())
+                .decryptedPrivateKey(encryptionService.decrypt(details.getEncryptedPrivateKey()))
+                .build();
+    }
+
     // ─── helpers ─────────────────────────────────────────────────────────────
 
     private CloudProfile findAndVerifyOwner(String profileId, String ownerId) {
