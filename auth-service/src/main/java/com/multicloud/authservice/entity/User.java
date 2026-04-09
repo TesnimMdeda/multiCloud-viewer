@@ -39,7 +39,7 @@ public class User implements UserDetails {
     private Role role;
 
     @Column
-    private String password;   // null until user sets via email link
+    private String password;
 
     @Builder.Default
     @Column(nullable = false)
@@ -47,7 +47,7 @@ public class User implements UserDetails {
 
     @Builder.Default
     @Column(nullable = false)
-    private boolean enabled = false;   // true after password is set
+    private boolean enabled = false;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
