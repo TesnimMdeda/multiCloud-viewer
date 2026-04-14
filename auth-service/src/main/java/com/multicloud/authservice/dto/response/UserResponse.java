@@ -14,6 +14,7 @@ public class UserResponse {
     private String avatar;
     private Role role;
     private boolean enabled;
+    private boolean accountNonLocked;
     private String createdBy;
     private LocalDateTime createdAt;
 }

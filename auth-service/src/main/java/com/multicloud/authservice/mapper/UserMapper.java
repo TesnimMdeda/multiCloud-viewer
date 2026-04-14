@@ -16,6 +16,7 @@ public interface UserMapper {
     @Mapping(target = "avatar", source = "avatar")
     @Mapping(target = "role", source = "role")
     @Mapping(target = "enabled", source = "enabled")
+    @Mapping(target = "accountNonLocked", source = "accountNonLocked")
     @Mapping(target = "createdAt", source = "createdAt")
     @Mapping(target = "createdBy", source = "createdBy")
     UserResponse toResponse(User user);
