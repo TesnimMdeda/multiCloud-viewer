@@ -3,6 +3,7 @@ package com.multicloud.resourcemanagementservice.service;
 import com.multicloud.resourcemanagementservice.client.CloudProfileServiceClient;
 import com.multicloud.resourcemanagementservice.client.dto.GcpProfileDetailsResponse;
 import com.multicloud.resourcemanagementservice.dto.ResourceNode;
+import com.multicloud.resourcemanagementservice.dto.ResourceStats;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,5 +32,14 @@ public class ResourceService {
                 .findFirst()
                 .map(f -> f.fetchResources(profileId))
                 .orElseThrow(() -> new RuntimeException("OCI Fetcher not found"));
+    }
+
+    public ResourceStats getStats(String profileId) {
+        String provider = profileClient.getProfile(profileId).getData().getProvider();
+        return fetchers.stream()
+                .filter(f -> f.supports(provider))
+                .findFirst()
+                .map(f -> f.fetchStats(profileId))
+                .orElseThrow(() -> new RuntimeException(provider + " Fetcher not found"));
     }
 }

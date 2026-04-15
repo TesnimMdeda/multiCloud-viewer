@@ -11,6 +11,7 @@ import com.google.cloud.storage.StorageOptions;
 import com.multicloud.resourcemanagementservice.client.CloudProfileServiceClient;
 import com.multicloud.resourcemanagementservice.client.dto.GcpProfileDetailsResponse;
 import com.multicloud.resourcemanagementservice.dto.ResourceNode;
+import com.multicloud.resourcemanagementservice.dto.ResourceStats;
 import com.multicloud.resourcemanagementservice.service.ResourceFetcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,8 +32,6 @@ public class GcpResourceFetcher implements ResourceFetcher {
     /**
      * Fixed-depth hierarchy enforced for every GCP tree:
      * PROVIDER → PROJECT → VPC → SUBNET → RESOURCE (leaf)
-     * Any level without real children receives a placeholder node instead of [] or
-     * null.
      */
     private static final Map<String, String> HIERARCHY = Map.of(
             "PROVIDER", "PROJECT",
@@ -46,6 +45,43 @@ public class GcpResourceFetcher implements ResourceFetcher {
     }
 
     @Override
+    public ResourceStats fetchStats(String profileId) {
+        GcpProfileDetailsResponse details = profileClient.getGcpProfileDetails(profileId).getData();
+        String key = details.getDecryptedServiceAccountKey();
+
+        try {
+            GoogleCredentials credentials = GoogleCredentials.fromStream(
+                    new ByteArrayInputStream(key.getBytes(StandardCharsets.UTF_8)));
+
+            List<String> projectIds = discoverProjects(credentials, details.getProjectId());
+            int totalVpc = 0, totalSubnet = 0, totalCompute = 0, totalStorage = 0, totalDisk = 0;
+
+            for (String projectId : projectIds) {
+                Map<String, Integer> counts = countProjectResources(projectId, credentials);
+                totalVpc += counts.getOrDefault("VPC", 0);
+                totalSubnet += counts.getOrDefault("SUBNET", 0);
+                totalCompute += counts.getOrDefault("INSTANCE", 0);
+                totalStorage += counts.getOrDefault("BUCKET", 0);
+                totalDisk += counts.getOrDefault("DISK", 0);
+            }
+
+            return ResourceStats.builder()
+                    .provider("GCP")
+                    .projectCount(projectIds.size())
+                    .vpcCount(totalVpc)
+                    .subnetCount(totalSubnet)
+                    .computeCount(totalCompute)
+                    .storageCount(totalStorage)
+                    .diskCount(totalDisk)
+                    .build();
+
+        } catch (IOException e) {
+            log.error("Failed to fetch GCP stats: {}", e.getMessage());
+            throw new RuntimeException("GCP Stats Fetch Failed", e);
+        }
+    }
+
+    @Override
     public ResourceNode fetchResources(String profileId) {
         GcpProfileDetailsResponse details = profileClient.getGcpProfileDetails(profileId).getData();
         String key = details.getDecryptedServiceAccountKey();
@@ -54,7 +90,6 @@ public class GcpResourceFetcher implements ResourceFetcher {
             GoogleCredentials credentials = GoogleCredentials.fromStream(
                     new ByteArrayInputStream(key.getBytes(StandardCharsets.UTF_8)));
 
-            // Root node — represents the entire GCP account
             ResourceNode rootNode = ResourceNode.builder()
                     .id("gcp-root")
                     .name("Google Cloud Platform")
@@ -62,309 +97,249 @@ public class GcpResourceFetcher implements ResourceFetcher {
                     .details(Map.of("serviceAccount", details.getServiceAccountEmail()))
                     .build();
 
-            // ── Step 1: Discover all accessible projects ──────────────────────────────
             List<String> projectIds = discoverProjects(credentials, details.getProjectId());
-            log.info("Discovered {} project(s) for GCP profile {}", projectIds.size(), profileId);
-
-            // ── Step 2: Fetch resources for each project ──────────────────────────────
             for (String projectId : projectIds) {
-                try {
-                    ResourceNode projectNode = ResourceNode.builder()
-                            .id(projectId)
-                            .name(projectId)
-                            .type("PROJECT")
-                            .build();
-                    rootNode.addChild(projectNode);
+                ResourceNode projectNode = ResourceNode.builder()
+                        .id(projectId)
+                        .name(projectId)
+                        .type("PROJECT")
+                        .build();
+                rootNode.addChild(projectNode);
 
-                    fetchComputeResources(projectId, credentials, projectNode);
-                    fetchBuckets(projectId, credentials, projectNode);
-                    fetchDisks(projectId, credentials, projectNode);
-                } catch (Exception e) {
-                    log.error("Failed to fetch resources for project {}: {}", projectId, e.getMessage());
-                }
+                // Perform deep recursive discovery for the project
+                projectNode.setChildren(fetchDeepProjectChildren(projectId, credentials));
+
+                // Fetch high-level statistics for this project
+                Map<String, Integer> counts = countProjectResources(projectId, credentials);
+                projectNode.setCount(counts.values().stream().mapToInt(Integer::intValue).sum());
+                projectNode.setResourceCounts(counts);
             }
 
-            // ── Step 3: Guarantee PROVIDER → PROJECT → VPC → SUBNET → RESOURCE depth ─
+            // Enforce hierarchy skeleton (placeholders) and compute all counts
             rootNode.ensureHierarchy(HIERARCHY);
-
-            // ── Step 4: Populate count field on every node (real children only) ───────
             rootNode.computeCounts();
 
             return rootNode;
 
         } catch (IOException e) {
-            log.error("Failed to initialise GCP credentials: {}", e.getMessage());
+            log.error("Failed to perform deep GCP discovery: {}", e.getMessage());
             throw new RuntimeException("GCP Discovery Failed", e);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Project discovery
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private List<String> discoverProjects(GoogleCredentials credentials,
-            String defaultProjectId) throws IOException {
-        ProjectsSettings settings = ProjectsSettings.newBuilder()
-                .setCredentialsProvider(() -> credentials)
-                .build();
-
-        List<String> projectIds = new ArrayList<>();
-        try (ProjectsClient projectsClient = ProjectsClient.create(settings)) {
-            for (Project project : projectsClient.searchProjects("").iterateAll()) {
-                projectIds.add(project.getProjectId());
-            }
-        } catch (Exception e) {
-            log.warn("Could not search projects: {}. Falling back to profile project.", e.getMessage());
-        }
-
-        if (projectIds.isEmpty() && defaultProjectId != null) {
-            projectIds.add(defaultProjectId);
-        }
-        return projectIds;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Compute: VPCs → Subnets → Instances
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchComputeResources(String projectId,
-            GoogleCredentials credentials,
-            ResourceNode projectNode) {
+    private List<ResourceNode> fetchDeepProjectChildren(String projectId, GoogleCredentials credentials) {
+        List<ResourceNode> children = new ArrayList<>();
         try {
             NetworksSettings networksSettings = NetworksSettings.newBuilder()
                     .setCredentialsProvider(() -> credentials).build();
-            SubnetworksSettings subnetSettings = SubnetworksSettings.newBuilder()
-                    .setCredentialsProvider(() -> credentials).build();
-            InstancesSettings instancesSettings = InstancesSettings.newBuilder()
-                    .setCredentialsProvider(() -> credentials).build();
-
-            try (NetworksClient networksClient = NetworksClient.create(networksSettings);
-                    SubnetworksClient subnetworksClient = SubnetworksClient.create(subnetSettings);
-                    InstancesClient instancesClient = InstancesClient.create(instancesSettings)) {
-
-                // A. Fetch VPCs ────────────────────────────────────────────────────────
-                Map<String, ResourceNode> vpcNodes = new HashMap<>();
-                Map<String, ResourceNode> subnetNodes = new HashMap<>();
-
-                for (Network network : networksClient.list(projectId).iterateAll()) {
+            try (NetworksClient networksClient = NetworksClient.create(networksSettings)) {
+                networksClient.list(projectId).iterateAll().forEach(network -> {
                     ResourceNode vpcNode = ResourceNode.builder()
                             .id(network.getSelfLink())
                             .name(network.getName())
                             .type("VPC")
                             .details(Map.of("id", String.valueOf(network.getId())))
                             .build();
-                    vpcNodes.put(network.getSelfLink(), vpcNode);
-                    projectNode.addChild(vpcNode);
-                }
-
-                // B. Fetch Subnets and attach to their VPC ────────────────────────────
-                for (Map.Entry<String, SubnetworksScopedList> entry : subnetworksClient.aggregatedList(projectId)
-                        .iterateAll()) {
-
-                    for (Subnetwork subnet : entry.getValue().getSubnetworksList()) {
-                        ResourceNode subnetNode = ResourceNode.builder()
-                                .id(subnet.getSelfLink())
-                                .name(subnet.getName())
-                                .type("SUBNET")
-                                .details(Map.of(
-                                        "region", subnet.getRegion(),
-                                        "ipCidrRange", subnet.getIpCidrRange()))
-                                .build();
-                        subnetNodes.put(subnet.getSelfLink(), subnetNode);
-
-                        ResourceNode parentVpc = vpcNodes.get(subnet.getNetwork());
-                        if (parentVpc != null) {
-                            parentVpc.addChild(subnetNode);
-                        }
-                        // Subnets with no matching VPC are discarded — ensureHierarchy
-                        // will add a placeholder VPC if the project has no children.
-                    }
-                }
-
-                // C. Fetch Instances and route them through VPC → Subnet ───────────────
-                for (Map.Entry<String, InstancesScopedList> entry : instancesClient.aggregatedList(projectId)
-                        .iterateAll()) {
-
-                    for (Instance instance : entry.getValue().getInstancesList()) {
-                        Map<String, Object> details = new HashMap<>();
-                        details.put("status", instance.getStatus());
-                        details.put("machineType", instance.getMachineType());
-                        details.put("zone", entry.getKey().replace("zones/", ""));
-
-                        ResourceNode instanceNode = ResourceNode.builder()
-                                .id(instance.getSelfLink())
-                                .name(instance.getName())
-                                .type("INSTANCE")
-                                .details(details)
-                                .build();
-
-                        if (instance.getNetworkInterfacesList().isEmpty()) {
-                            log.debug("Instance {} has no network interfaces — skipping", instance.getName());
-                            continue;
-                        }
-
-                        String subnetLink = instance.getNetworkInterfaces(0).getSubnetwork();
-                        String vpcLink = instance.getNetworkInterfaces(0).getNetwork();
-
-                        ResourceNode parentSubnet = subnetNodes.get(subnetLink);
-                        if (parentSubnet != null) {
-                            // Happy path: instance → known subnet
-                            parentSubnet.addChild(instanceNode);
-                        } else {
-                            ResourceNode parentVpc = vpcNodes.get(vpcLink);
-                            if (parentVpc != null) {
-                                // Instance maps to a VPC but not a specific subnet →
-                                // place it in a synthetic "Default Subnet" of that VPC
-                                ResourceNode defaultSubnet = getOrCreateSyntheticSubnet(
-                                        parentVpc, "gcp-default-subnet", "Default Subnet");
-                                defaultSubnet.addChild(instanceNode);
-                            } else {
-                                // No VPC match at all — skip to avoid hierarchy breakage
-                                log.debug("Instance {} could not be mapped to any VPC/subnet — skipping",
-                                        instance.getName());
-                            }
-                        }
-                    }
-                }
+                    vpcNode.setChildren(fetchDeepVcnChildren(network.getSelfLink(), projectId, credentials));
+                    children.add(vpcNode);
+                });
             }
-        } catch (Exception e) {
-            log.warn("Failed to fetch Compute resources for project {}: {}", projectId, e.getMessage());
-        }
-    }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Storage: Buckets under a synthetic "Cloud Storage" VPC → Subnet
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchBuckets(String projectId,
-            GoogleCredentials credentials,
-            ResourceNode projectNode) {
-        try {
-            Storage storage = StorageOptions.newBuilder()
-                    .setProjectId(projectId)
-                    .setCredentials(credentials)
-                    .build()
-                    .getService();
-
-            List<Bucket> buckets = new ArrayList<>();
-            storage.list().iterateAll().forEach(buckets::add);
-            if (buckets.isEmpty())
-                return;
-
-            // Synthetic VPC — represents the Cloud Storage service
+            // Synthetic VPCs
             ResourceNode storageVpc = ResourceNode.builder()
                     .id(projectId + "-gcs-vpc")
                     .name("Cloud Storage")
                     .type("VPC")
                     .details(Map.of("synthetic", true))
                     .build();
+            storageVpc.setChildren(fetchDeepVcnChildren(storageVpc.getId(), projectId, credentials));
+            if (!storageVpc.getChildren().isEmpty())
+                children.add(storageVpc);
 
-            // Synthetic Subnet — groups all buckets at the correct depth
-            ResourceNode bucketSubnet = ResourceNode.builder()
-                    .id(projectId + "-gcs-subnet")
-                    .name("GCS Buckets")
-                    .type("SUBNET")
+            ResourceNode diskVpc = ResourceNode.builder()
+                    .id(projectId + "-disks-vpc")
+                    .name("Persistent Disks")
+                    .type("VPC")
                     .details(Map.of("synthetic", true))
                     .build();
-
-            storageVpc.addChild(bucketSubnet);
-            projectNode.addChild(storageVpc);
-
-            buckets.forEach(bucket -> bucketSubnet.addChild(ResourceNode.builder()
-                    .id(bucket.getName())
-                    .name(bucket.getName())
-                    .type("BUCKET")
-                    .details(Map.of(
-                            "location", bucket.getLocation(),
-                            "storageClass", bucket.getStorageClass().name(),
-                            "createTime", String.valueOf(bucket.getCreateTime())))
-                    .build()));
+            diskVpc.setChildren(fetchDeepVcnChildren(diskVpc.getId(), projectId, credentials));
+            if (!diskVpc.getChildren().isEmpty())
+                children.add(diskVpc);
 
         } catch (Exception e) {
-            log.warn("Failed to fetch Buckets for project {}: {}", projectId, e.getMessage());
+            log.error("Error building deep GCP project tree: {}", e.getMessage());
         }
+        return children;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Disks: grouped per zone under a synthetic "Persistent Disks" VPC
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchDisks(String projectId,
-            GoogleCredentials credentials,
-            ResourceNode projectNode) {
+    private List<ResourceNode> fetchDeepVcnChildren(String vpcId, String projectId, GoogleCredentials credentials) {
+        List<ResourceNode> subnets = new ArrayList<>();
         try {
-            DisksSettings disksSettings = DisksSettings.newBuilder()
-                    .setCredentialsProvider(() -> credentials)
-                    .build();
-
-            try (DisksClient disksClient = DisksClient.create(disksSettings)) {
-
-                // Synthetic VPC — represents the Persistent Disk service
-                ResourceNode diskVpc = ResourceNode.builder()
-                        .id(projectId + "-disks-vpc")
-                        .name("Persistent Disks")
-                        .type("VPC")
+            if (vpcId.endsWith("-gcs-vpc")) {
+                subnets.add(ResourceNode.builder()
+                        .id(projectId + "-gcs-subnet")
+                        .name("GCS Buckets")
+                        .type("SUBNET")
                         .details(Map.of("synthetic", true))
+                        .build());
+            } else if (vpcId.endsWith("-disks-vpc")) {
+                DisksSettings disksSettings = DisksSettings.newBuilder().setCredentialsProvider(() -> credentials)
                         .build();
-
-                boolean anyDisk = false;
-
-                for (Map.Entry<String, DisksScopedList> entry : disksClient.aggregatedList(projectId).iterateAll()) {
-
-                    for (Disk disk : entry.getValue().getDisksList()) {
-                        if (!anyDisk) {
-                            // Add the synthetic VPC only when at least one disk exists
-                            projectNode.addChild(diskVpc);
-                            anyDisk = true;
+                try (DisksClient disksClient = DisksClient.create(disksSettings)) {
+                    disksClient.aggregatedList(projectId).iterateAll().forEach(entry -> {
+                        if (entry.getValue().getDisksList().size() > 0) {
+                            String zoneName = entry.getKey().replace("zones/", "");
+                            subnets.add(ResourceNode.builder()
+                                    .id(projectId + "-disk-subnet-" + zoneName)
+                                    .name(zoneName + " Zone")
+                                    .type("SUBNET")
+                                    .details(Map.of("synthetic", true, "zone", zoneName))
+                                    .build());
                         }
-
-                        // Group disks into per-zone synthetic Subnets
-                        String zoneName = entry.getKey().replace("zones/", "");
-                        ResourceNode zoneSubnet = getOrCreateSyntheticSubnet(
-                                diskVpc, zoneName, zoneName + " Zone");
-
-                        zoneSubnet.addChild(ResourceNode.builder()
-                                .id(disk.getSelfLink())
-                                .name(disk.getName())
-                                .type("DISK")
-                                .details(Map.of(
-                                        "status", disk.getStatus(),
-                                        "sizeGb", disk.getSizeGb(),
-                                        "type", disk.getType(),
-                                        "zone", zoneName))
-                                .build());
-                    }
+                    });
+                }
+            } else {
+                SubnetworksSettings subnetSettings = SubnetworksSettings.newBuilder()
+                        .setCredentialsProvider(() -> credentials).build();
+                try (SubnetworksClient subnetworksClient = SubnetworksClient.create(subnetSettings)) {
+                    subnetworksClient.aggregatedList(projectId).iterateAll().forEach(entry -> {
+                        entry.getValue().getSubnetworksList().forEach(subnet -> {
+                            if (vpcId.equals(subnet.getNetwork())) {
+                                ResourceNode subnetNode = ResourceNode.builder()
+                                        .id(subnet.getSelfLink())
+                                        .name(subnet.getName())
+                                        .type("SUBNET")
+                                        .details(Map.of("region", subnet.getRegion()))
+                                        .build();
+                                // Recursively fetch instances in this subnet
+                                subnetNode
+                                        .setChildren(fetchSubnetChildren(subnet.getSelfLink(), projectId, credentials));
+                                subnets.add(subnetNode);
+                            }
+                        });
+                    });
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to fetch Disks for project {}: {}", projectId, e.getMessage());
+            log.error("Error building deep GCP VPC tree: {}", e.getMessage());
         }
+        return subnets;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Returns an existing SUBNET child of {@code parentVpc} with the given id, or
-     * creates
-     * and attaches a new one. Used to avoid duplicate synthetic subnet nodes.
-     */
-    private ResourceNode getOrCreateSyntheticSubnet(ResourceNode parentVpc,
-            String subnetId,
-            String subnetName) {
-        return parentVpc.getChildren().stream()
-                .filter(c -> "SUBNET".equals(c.getType()) && subnetId.equals(c.getId()))
-                .findFirst()
-                .orElseGet(() -> {
-                    ResourceNode sub = ResourceNode.builder()
-                            .id(subnetId)
-                            .name(subnetName)
-                            .type("SUBNET")
-                            .details(Map.of("synthetic", true))
-                            .build();
-                    parentVpc.addChild(sub);
-                    return sub;
+    private List<ResourceNode> fetchSubnetChildren(String subnetId, String projectId, GoogleCredentials credentials) {
+        List<ResourceNode> children = new ArrayList<>();
+        try {
+            if (subnetId.endsWith("-gcs-subnet")) {
+                Storage storage = StorageOptions.newBuilder().setProjectId(projectId).setCredentials(credentials)
+                        .build().getService();
+                storage.list().iterateAll().forEach(bucket -> {
+                    children.add(ResourceNode.builder()
+                            .id(bucket.getName()).name(bucket.getName()).type("BUCKET").build());
                 });
+            } else if (subnetId.contains("-disk-subnet-")) {
+                String zone = subnetId.substring(subnetId.lastIndexOf("-") + 1);
+                DisksSettings disksSettings = DisksSettings.newBuilder().setCredentialsProvider(() -> credentials)
+                        .build();
+                try (DisksClient disksClient = DisksClient.create(disksSettings)) {
+                    disksClient.list(projectId, zone).iterateAll().forEach(disk -> {
+                        children.add(ResourceNode.builder()
+                                .id(disk.getSelfLink()).name(disk.getName()).type("DISK").build());
+                    });
+                }
+            } else {
+                InstancesSettings instancesSettings = InstancesSettings.newBuilder()
+                        .setCredentialsProvider(() -> credentials).build();
+                try (InstancesClient instancesClient = InstancesClient.create(instancesSettings)) {
+                    instancesClient.aggregatedList(projectId).iterateAll().forEach(entry -> {
+                        entry.getValue().getInstancesList().forEach(instance -> {
+                            if (!instance.getNetworkInterfacesList().isEmpty()
+                                    && subnetId.equals(instance.getNetworkInterfaces(0).getSubnetwork())) {
+                                children.add(ResourceNode.builder()
+                                        .id(instance.getSelfLink()).name(instance.getName()).type("INSTANCE").build());
+                            }
+                        });
+                    });
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error fetching GCP subnet children: {}", e.getMessage());
+        }
+        return children;
+    }
+
+    private Map<String, Integer> countProjectResources(String projectId, GoogleCredentials credentials) {
+        Map<String, Integer> counts = new HashMap<>();
+        try {
+            NetworksSettings networksSettings = NetworksSettings.newBuilder().setCredentialsProvider(() -> credentials)
+                    .build();
+            try (NetworksClient networksClient = NetworksClient.create(networksSettings)) {
+                int vpcCount = 0;
+                for (Network n : networksClient.list(projectId).iterateAll())
+                    vpcCount++;
+                counts.put("VPC", vpcCount);
+            }
+
+            SubnetworksSettings subnetworksSettings = SubnetworksSettings.newBuilder()
+                    .setCredentialsProvider(() -> credentials).build();
+            try (SubnetworksClient subnetworksClient = SubnetworksClient.create(subnetworksSettings)) {
+                int subnetCount = 0;
+                for (Map.Entry<String, SubnetworksScopedList> entry : subnetworksClient.aggregatedList(projectId)
+                        .iterateAll()) {
+                    subnetCount += entry.getValue().getSubnetworksList().size();
+                }
+                counts.put("SUBNET", subnetCount);
+            }
+
+            InstancesSettings instancesSettings = InstancesSettings.newBuilder()
+                    .setCredentialsProvider(() -> credentials).build();
+            try (InstancesClient instancesClient = InstancesClient.create(instancesSettings)) {
+                int instanceCount = 0;
+                for (Map.Entry<String, InstancesScopedList> entry : instancesClient.aggregatedList(projectId)
+                        .iterateAll()) {
+                    instanceCount += entry.getValue().getInstancesList().size();
+                }
+                counts.put("INSTANCE", instanceCount);
+            }
+
+            Storage storage = StorageOptions.newBuilder().setProjectId(projectId).setCredentials(credentials).build()
+                    .getService();
+            int bucketCount = 0;
+            for (Bucket b : storage.list().iterateAll())
+                bucketCount++;
+            if (bucketCount > 0) {
+                counts.put("BUCKET", bucketCount);
+                counts.put("VPC", counts.getOrDefault("VPC", 0) + 1); // Cloud Storage synthetic VPC
+            }
+
+            DisksSettings disksSettings = DisksSettings.newBuilder().setCredentialsProvider(() -> credentials).build();
+            try (DisksClient disksClient = DisksClient.create(disksSettings)) {
+                int diskCount = 0;
+                for (Map.Entry<String, DisksScopedList> entry : disksClient.aggregatedList(projectId).iterateAll()) {
+                    diskCount += entry.getValue().getDisksList().size();
+                }
+                if (diskCount > 0) {
+                    counts.put("DISK", diskCount);
+                    counts.put("VPC", counts.getOrDefault("VPC", 0) + 1); // Persistent Disks synthetic VPC
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error counting GCP resources for {}: {}", projectId, e.getMessage());
+        }
+        return counts;
+    }
+
+    private List<String> discoverProjects(GoogleCredentials credentials, String defaultProjectId) throws IOException {
+        ProjectsSettings settings = ProjectsSettings.newBuilder().setCredentialsProvider(() -> credentials).build();
+        List<String> projectIds = new ArrayList<>();
+        try (ProjectsClient projectsClient = ProjectsClient.create(settings)) {
+            for (Project project : projectsClient.searchProjects("").iterateAll()) {
+                projectIds.add(project.getProjectId());
+            }
+        } catch (Exception e) {
+            log.warn("Could not search projects: {}. Falling back to default.", e.getMessage());
+        }
+        if (projectIds.isEmpty() && defaultProjectId != null)
+            projectIds.add(defaultProjectId);
+        return projectIds;
     }
 }

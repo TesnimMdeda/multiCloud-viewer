@@ -26,6 +26,12 @@ public class ResourceNode {
      */
     private Integer count;
 
+    /**
+     * Breakdown of resource counts by type (e.g., "VPC": 2, "INSTANCE": 10).
+     * Used primarily for summary nodes like Projects and Compartments.
+     */
+    private Map<String, Integer> resourceCounts;
+
     @Builder.Default
     private List<ResourceNode> children = new ArrayList<>();
 

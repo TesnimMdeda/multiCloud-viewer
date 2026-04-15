@@ -3,6 +3,7 @@ package com.multicloud.resourcemanagementservice.service.impl;
 import com.multicloud.resourcemanagementservice.client.CloudProfileServiceClient;
 import com.multicloud.resourcemanagementservice.client.dto.OciProfileDetailsResponse;
 import com.multicloud.resourcemanagementservice.dto.ResourceNode;
+import com.multicloud.resourcemanagementservice.dto.ResourceStats;
 import com.multicloud.resourcemanagementservice.service.ResourceFetcher;
 import com.oracle.bmc.Region;
 import com.oracle.bmc.auth.SimpleAuthenticationDetailsProvider;
@@ -16,7 +17,6 @@ import com.oracle.bmc.core.requests.ListVcnsRequest;
 import com.oracle.bmc.core.requests.ListVnicAttachmentsRequest;
 import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.objectstorage.ObjectStorageClient;
-import com.oracle.bmc.objectstorage.model.BucketSummary;
 import com.oracle.bmc.objectstorage.requests.GetNamespaceRequest;
 import com.oracle.bmc.objectstorage.requests.ListBucketsRequest;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +37,6 @@ public class OciResourceFetcher implements ResourceFetcher {
     /**
      * Fixed-depth hierarchy enforced for every OCI tree:
      * COMPARTMENT → VCN → SUBNET → RESOURCE (leaf)
-     * Any level without real children receives a placeholder node instead of [] or
-     * null.
      */
     private static final Map<String, String> HIERARCHY = Map.of(
             "COMPARTMENT", "VCN",
@@ -48,6 +46,41 @@ public class OciResourceFetcher implements ResourceFetcher {
     @Override
     public boolean supports(String provider) {
         return "OCI".equalsIgnoreCase(provider);
+    }
+
+    @Override
+    public ResourceStats fetchStats(String profileId) {
+        OciProfileDetailsResponse details = profileClient.getOciProfileDetails(profileId).getData();
+
+        SimpleAuthenticationDetailsProvider authProvider = SimpleAuthenticationDetailsProvider.builder()
+                .tenantId(details.getTenancyOcid())
+                .userId(details.getUserOcid())
+                .fingerprint(details.getFingerprint())
+                .privateKeySupplier(() -> new ByteArrayInputStream(
+                        details.getDecryptedPrivateKey().getBytes(StandardCharsets.UTF_8)))
+                .region(Region.fromRegionId(details.getRegion()))
+                .build();
+
+        try (VirtualNetworkClient vcnClient = VirtualNetworkClient.builder().build(authProvider);
+                ComputeClient computeClient = ComputeClient.builder().build(authProvider);
+                ObjectStorageClient storageClient = ObjectStorageClient.builder().build(authProvider)) {
+
+            Map<String, Integer> counts = countCompartmentResources(details.getCompartmentId(), vcnClient,
+                    computeClient, storageClient);
+
+            return ResourceStats.builder()
+                    .provider("OCI")
+                    .projectCount(1)
+                    .vpcCount(counts.getOrDefault("VCN", 0))
+                    .subnetCount(counts.getOrDefault("SUBNET", 0))
+                    .computeCount(counts.getOrDefault("INSTANCE", 0))
+                    .storageCount(counts.getOrDefault("BUCKET", 0))
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Failed to fetch OCI stats: {}", e.getMessage());
+            throw new RuntimeException("OCI Stats Fetch Failed", e);
+        }
     }
 
     @Override
@@ -63,8 +96,6 @@ public class OciResourceFetcher implements ResourceFetcher {
                 .region(Region.fromRegionId(details.getRegion()))
                 .build();
 
-        List<String> errors = new ArrayList<>();
-
         ResourceNode rootNode = ResourceNode.builder()
                 .id(details.getCompartmentId())
                 .name("OCI Compartment")
@@ -78,325 +109,208 @@ public class OciResourceFetcher implements ResourceFetcher {
                 ComputeClient computeClient = ComputeClient.builder().build(authProvider);
                 ObjectStorageClient storageClient = ObjectStorageClient.builder().build(authProvider)) {
 
-            Map<String, ResourceNode> vcnNodes = new HashMap<>();
-            Map<String, ResourceNode> subnetNodes = new HashMap<>();
+            // Perform deep recursive discovery
+            List<ResourceNode> children = fetchDeepCompartmentChildren(details.getCompartmentId(), 
+                    vcnClient, computeClient, storageClient);
+            rootNode.setChildren(children);
 
-            // ── Step 1: Build the VCN → Subnet backbone ──────────────────────────────
-            fetchNetworkResources(details.getCompartmentId(), vcnClient,
-                    rootNode, vcnNodes, subnetNodes, errors);
+            // Fetch aggregate counts for top-level stats
+            Map<String, Integer> counts = countCompartmentResources(details.getCompartmentId(), vcnClient,
+                    computeClient, storageClient);
+            int totalCount = counts.values().stream().mapToInt(Integer::intValue).sum();
 
-            // ── Step 2: Map Instances to their Subnets via VNIC attachments ──────────
-            fetchComputeResources(details.getCompartmentId(), computeClient, vcnClient,
-                    rootNode, vcnNodes, subnetNodes, errors);
+            rootNode.setCount(totalCount);
+            rootNode.setResourceCounts(counts);
 
-            // ── Step 3: Buckets under a synthetic "Object Storage" VCN ───────────────
-            fetchStorageResources(details.getCompartmentId(), storageClient, rootNode, errors);
-
-            // ── Step 4: Persist any partial-fetch errors in root details ──────────────
-            if (!errors.isEmpty()) {
-                Map<String, Object> updatedDetails = new HashMap<>(rootNode.getDetails());
-                updatedDetails.put("errors", errors);
-                updatedDetails.put("partialResult", true);
-                rootNode.setDetails(updatedDetails);
-                log.warn("OCI fetch for profile {} completed with {} error(s): {}",
-                        profileId, errors.size(), errors);
-            }
-
-            // ── Step 5: Guarantee COMPARTMENT → VCN → SUBNET → RESOURCE depth ────────
+            // Enforce hierarchy skeleton and compute nested counts
             rootNode.ensureHierarchy(HIERARCHY);
-
-            // ── Step 6: Populate count field on every node (real children only) ───────
             rootNode.computeCounts();
 
             return rootNode;
 
         } catch (Exception e) {
-            log.error("Failed to fetch OCI resources for profile {}: {}", profileId, e.getMessage());
-            throw new RuntimeException("OCI Resource Fetching Failed: " + buildUserFriendlyMessage(e), e);
+            log.error("Failed to perform deep OCI discovery for profile {}: {}", profileId, e.getMessage());
+            throw new RuntimeException("OCI Resource Discovery Failed: " + buildUserFriendlyMessage(e), e);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Network: VCNs and their Subnets
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchNetworkResources(String compartmentId,
-            VirtualNetworkClient client,
-            ResourceNode rootNode,
-            Map<String, ResourceNode> vcnNodes,
-            Map<String, ResourceNode> subnetNodes,
-            List<String> errors) {
-        try {
-            ListVcnsRequest vcnRequest = ListVcnsRequest.builder()
-                    .compartmentId(compartmentId).build();
-
-            client.listVcns(vcnRequest).getItems().forEach(vcn -> {
-                ResourceNode vcnNode = ResourceNode.builder()
-                        .id(vcn.getId())
-                        .name(vcn.getDisplayName())
-                        .type("VCN")
-                        .details(Map.of("cidrBlock", vcn.getCidrBlock()))
-                        .build();
-                vcnNodes.put(vcn.getId(), vcnNode);
-                rootNode.addChild(vcnNode);
-
-                // Fetch subnets for this VCN
-                try {
-                    ListSubnetsRequest subnetRequest = ListSubnetsRequest.builder()
-                            .compartmentId(compartmentId)
-                            .vcnId(vcn.getId())
-                            .build();
-                    client.listSubnets(subnetRequest).getItems().forEach(subnet -> {
-                        ResourceNode subnetNode = ResourceNode.builder()
-                                .id(subnet.getId())
-                                .name(subnet.getDisplayName())
-                                .type("SUBNET")
-                                .details(Map.of("cidrBlock", subnet.getCidrBlock()))
-                                .build();
-                        subnetNodes.put(subnet.getId(), subnetNode);
-                        vcnNode.addChild(subnetNode);
-                    });
-                } catch (Exception e) {
-                    String msg = "Failed to fetch subnets for VCN " + vcn.getId()
-                            + ": " + buildUserFriendlyMessage(e);
-                    log.warn(msg);
-                    errors.add(msg);
-                }
-            });
-        } catch (Exception e) {
-            String msg = "Failed to fetch VCNs: " + buildUserFriendlyMessage(e);
-            log.warn(msg);
-            errors.add(msg);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Compute: Instances mapped to Subnets via VNIC attachments
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchComputeResources(String compartmentId,
-            ComputeClient computeClient,
+    private List<ResourceNode> fetchDeepCompartmentChildren(String compartmentId,
             VirtualNetworkClient vcnClient,
-            ResourceNode rootNode,
-            Map<String, ResourceNode> vcnNodes,
-            Map<String, ResourceNode> subnetNodes,
-            List<String> errors) {
+            ComputeClient computeClient,
+            ObjectStorageClient storageClient) {
+        List<ResourceNode> children = new ArrayList<>();
         try {
-            // Build instanceId → subnetId map from VNIC attachments
-            Map<String, String> instanceToSubnet = buildInstanceToSubnetMap(compartmentId, computeClient, vcnClient,
-                    errors);
+            vcnClient.listVcns(ListVcnsRequest.builder().compartmentId(compartmentId).build()).getItems()
+                    .forEach(vcn -> {
+                        ResourceNode vcnNode = ResourceNode.builder()
+                                .id(vcn.getId())
+                                .name(vcn.getDisplayName())
+                                .type("VCN")
+                                .details(Map.of("cidrBlock", vcn.getCidrBlock()))
+                                .build();
+                        vcnNode.setChildren(fetchDeepVcnChildren(vcn.getId(), compartmentId, vcnClient, computeClient,
+                                storageClient));
+                        children.add(vcnNode);
+                    });
 
-            ListInstancesRequest request = ListInstancesRequest.builder()
-                    .compartmentId(compartmentId).build();
-
-            computeClient.listInstances(request).getItems().forEach(instance -> {
-                Map<String, Object> details = new HashMap<>();
-                details.put("lifecycleState", instance.getLifecycleState().getValue());
-                details.put("shape", instance.getShape());
-                details.put("region", instance.getRegion());
-
-                ResourceNode instanceNode = ResourceNode.builder()
-                        .id(instance.getId())
-                        .name(instance.getDisplayName())
-                        .type("INSTANCE")
-                        .details(details)
+            String namespace = storageClient.getNamespace(GetNamespaceRequest.builder().build()).getValue();
+            if (storageClient
+                    .listBuckets(
+                            ListBucketsRequest.builder().namespaceName(namespace).compartmentId(compartmentId).build())
+                    .getItems().size() > 0) {
+                ResourceNode storageVcn = ResourceNode.builder()
+                        .id("oci-object-storage-vcn")
+                        .name("Object Storage")
+                        .type("VCN")
+                        .details(Map.of("synthetic", true, "namespace", namespace))
                         .build();
-
-                String subnetId = instanceToSubnet.get(instance.getId());
-                ResourceNode targetSubnet = subnetId != null ? subnetNodes.get(subnetId) : null;
-
-                if (targetSubnet != null) {
-                    // Happy path: instance sits inside a known subnet
-                    targetSubnet.addChild(instanceNode);
-                } else {
-                    // Fallback: place under a synthetic subnet to preserve hierarchy depth
-                    ResourceNode fallback = getOrCreateFallbackSubnet(rootNode, vcnNodes);
-                    fallback.addChild(instanceNode);
-                }
-            });
+                storageVcn.setChildren(fetchDeepVcnChildren(storageVcn.getId(), compartmentId, vcnClient, computeClient,
+                        storageClient));
+                children.add(storageVcn);
+            }
         } catch (Exception e) {
-            String msg = "Failed to fetch Instances: " + buildUserFriendlyMessage(e);
-            log.warn(msg);
-            errors.add(msg);
+            log.error("Error building deep OCI compartment tree: {}", e.getMessage());
         }
+        return children;
     }
 
-    /**
-     * Uses VNIC attachments to resolve each Instance OCID → Subnet OCID.
-     * GetVnic is called per unique VNIC; failures are tolerated and logged.
-     */
+    private List<ResourceNode> fetchDeepVcnChildren(String vcnId, String compartmentId,
+            VirtualNetworkClient vcnClient, ComputeClient computeClient, ObjectStorageClient storageClient) {
+        List<ResourceNode> subnets = new ArrayList<>();
+        try {
+            if ("oci-object-storage-vcn".equals(vcnId)) {
+                ResourceNode bucketSubnet = ResourceNode.builder()
+                        .id("oci-buckets-subnet")
+                        .name("Buckets")
+                        .type("SUBNET")
+                        .details(Map.of("synthetic", true))
+                        .build();
+                bucketSubnet.setChildren(fetchSubnetChildren(bucketSubnet.getId(), compartmentId, computeClient,
+                        vcnClient, storageClient));
+                subnets.add(bucketSubnet);
+            } else {
+                vcnClient.listSubnets(ListSubnetsRequest.builder().compartmentId(compartmentId).vcnId(vcnId).build())
+                        .getItems().forEach(subnet -> {
+                            ResourceNode subnetNode = ResourceNode.builder()
+                                    .id(subnet.getId())
+                                    .name(subnet.getDisplayName())
+                                    .type("SUBNET")
+                                    .details(Map.of("cidrBlock", subnet.getCidrBlock()))
+                                    .build();
+                            subnetNode.setChildren(fetchSubnetChildren(subnet.getId(), compartmentId, computeClient,
+                                    vcnClient, storageClient));
+                            subnets.add(subnetNode);
+                        });
+            }
+        } catch (Exception e) {
+            log.error("Error building deep OCI VCN tree: {}", e.getMessage());
+        }
+        return subnets;
+    }
+
+    private List<ResourceNode> fetchSubnetChildren(String subnetId, String compartmentId,
+            ComputeClient computeClient, VirtualNetworkClient vcnClient, ObjectStorageClient storageClient) {
+        List<ResourceNode> children = new ArrayList<>();
+        try {
+            if ("oci-buckets-subnet".equals(subnetId)) {
+                String namespace = storageClient.getNamespace(GetNamespaceRequest.builder().build()).getValue();
+                storageClient.listBuckets(
+                        ListBucketsRequest.builder().namespaceName(namespace).compartmentId(compartmentId).build())
+                        .getItems().forEach(bucket -> {
+                            children.add(ResourceNode.builder()
+                                    .id(bucket.getName())
+                                    .name(bucket.getName())
+                                    .type("BUCKET")
+                                    .details(Map.of("namespace", bucket.getNamespace()))
+                                    .build());
+                        });
+                return children;
+            }
+
+            Map<String, String> instanceToSubnet = buildInstanceToSubnetMap(compartmentId, computeClient, vcnClient);
+            computeClient.listInstances(ListInstancesRequest.builder().compartmentId(compartmentId).build()).getItems()
+                    .forEach(instance -> {
+                        if (subnetId.equals(instanceToSubnet.get(instance.getId()))) {
+                            children.add(ResourceNode.builder()
+                                    .id(instance.getId())
+                                    .name(instance.getDisplayName())
+                                    .type("INSTANCE")
+                                    .details(Map.of("shape", instance.getShape(), "state",
+                                            instance.getLifecycleState().getValue()))
+                                    .build());
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("Error fetching subnet children: {}", e.getMessage());
+        }
+        return children;
+    }
+
+    private Map<String, Integer> countCompartmentResources(String compartmentId,
+            VirtualNetworkClient vcnClient,
+            ComputeClient computeClient,
+            ObjectStorageClient storageClient) {
+        Map<String, Integer> counts = new HashMap<>();
+        try {
+            int vcnCount = vcnClient.listVcns(ListVcnsRequest.builder().compartmentId(compartmentId).build()).getItems()
+                    .size();
+            counts.put("VCN", vcnCount);
+
+            int instanceCount = computeClient
+                    .listInstances(ListInstancesRequest.builder().compartmentId(compartmentId).build()).getItems()
+                    .size();
+            counts.put("INSTANCE", instanceCount);
+
+            int subnetCount = vcnClient.listSubnets(ListSubnetsRequest.builder().compartmentId(compartmentId).build())
+                    .getItems().size();
+            counts.put("SUBNET", subnetCount);
+
+            String namespace = storageClient.getNamespace(GetNamespaceRequest.builder().build()).getValue();
+            int bucketCount = storageClient
+                    .listBuckets(
+                            ListBucketsRequest.builder().namespaceName(namespace).compartmentId(compartmentId).build())
+                    .getItems().size();
+            if (bucketCount > 0) {
+                counts.put("BUCKET", bucketCount);
+                counts.put("VCN", counts.getOrDefault("VCN", 0) + 1);
+            }
+        } catch (Exception e) {
+            log.warn("Error counting OCI resources: {}", e.getMessage());
+        }
+        return counts;
+    }
+
     private Map<String, String> buildInstanceToSubnetMap(String compartmentId,
             ComputeClient computeClient,
-            VirtualNetworkClient vcnClient,
-            List<String> errors) {
+            VirtualNetworkClient vcnClient) {
         Map<String, String> instanceToSubnet = new HashMap<>();
         try {
-            ListVnicAttachmentsRequest attachRequest = ListVnicAttachmentsRequest.builder()
-                    .compartmentId(compartmentId).build();
-
-            computeClient.listVnicAttachments(attachRequest).getItems().forEach(attachment -> {
-                if (attachment.getLifecycleState() == VnicAttachment.LifecycleState.Attached) {
-                    try {
-                        GetVnicRequest getVnicRequest = GetVnicRequest.builder()
-                                .vnicId(attachment.getVnicId()).build();
-                        String subnetId = vcnClient.getVnic(getVnicRequest).getVnic().getSubnetId();
-                        instanceToSubnet.put(attachment.getInstanceId(), subnetId);
-                    } catch (Exception e) {
-                        log.debug("Could not resolve VNIC {} to subnet: {}",
-                                attachment.getVnicId(), e.getMessage());
-                    }
-                }
-            });
+            computeClient.listVnicAttachments(ListVnicAttachmentsRequest.builder().compartmentId(compartmentId).build())
+                    .getItems().forEach(attachment -> {
+                        if (attachment.getLifecycleState() == VnicAttachment.LifecycleState.Attached) {
+                            try {
+                                String subnetId = vcnClient
+                                        .getVnic(GetVnicRequest.builder().vnicId(attachment.getVnicId()).build())
+                                        .getVnic().getSubnetId();
+                                instanceToSubnet.put(attachment.getInstanceId(), subnetId);
+                            } catch (Exception e) {
+                                log.debug("Could not resolve VNIC {} to subnet: {}", attachment.getVnicId(),
+                                        e.getMessage());
+                            }
+                        }
+                    });
         } catch (Exception e) {
-            String msg = "Could not fetch VNIC attachments for subnet mapping: " + e.getMessage();
-            log.warn(msg);
-            errors.add(msg);
+            log.warn("Could not fetch VNIC attachments: {}", e.getMessage());
         }
         return instanceToSubnet;
     }
-
-    /**
-     * Returns a synthetic SUBNET node for instances that could not be mapped to a
-     * real subnet.
-     * The synthetic node is attached to the first available real VCN, or to a new
-     * synthetic VCN
-     * if none exist. This ensures the COMPARTMENT → VCN → SUBNET depth is always
-     * respected.
-     */
-    private ResourceNode getOrCreateFallbackSubnet(ResourceNode rootNode,
-            Map<String, ResourceNode> vcnNodes) {
-        final String FALLBACK_SUBNET_ID = "oci-unattached-subnet";
-
-        // Prefer the first real VCN if one exists
-        if (!vcnNodes.isEmpty()) {
-            ResourceNode firstVcn = vcnNodes.values().iterator().next();
-            return firstVcn.getChildren().stream()
-                    .filter(c -> FALLBACK_SUBNET_ID.equals(c.getId()))
-                    .findFirst()
-                    .orElseGet(() -> {
-                        ResourceNode sub = ResourceNode.builder()
-                                .id(FALLBACK_SUBNET_ID)
-                                .name("Unattached Compute")
-                                .type("SUBNET")
-                                .details(Map.of("synthetic", true))
-                                .build();
-                        firstVcn.addChild(sub);
-                        return sub;
-                    });
-        }
-
-        // No real VCNs — create a fully synthetic VCN + Subnet
-        final String FALLBACK_VCN_ID = "oci-compute-vcn";
-        ResourceNode synVcn = rootNode.getChildren().stream()
-                .filter(c -> FALLBACK_VCN_ID.equals(c.getId()))
-                .findFirst()
-                .orElseGet(() -> {
-                    ResourceNode vcn = ResourceNode.builder()
-                            .id(FALLBACK_VCN_ID)
-                            .name("Compute Network")
-                            .type("VCN")
-                            .details(Map.of("synthetic", true))
-                            .build();
-                    rootNode.addChild(vcn);
-                    return vcn;
-                });
-
-        return synVcn.getChildren().stream()
-                .filter(c -> FALLBACK_SUBNET_ID.equals(c.getId()))
-                .findFirst()
-                .orElseGet(() -> {
-                    ResourceNode sub = ResourceNode.builder()
-                            .id(FALLBACK_SUBNET_ID)
-                            .name("Compute Subnet")
-                            .type("SUBNET")
-                            .details(Map.of("synthetic", true))
-                            .build();
-                    synVcn.addChild(sub);
-                    return sub;
-                });
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Storage: Buckets grouped under a synthetic "Object Storage" VCN
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    private void fetchStorageResources(String compartmentId,
-            ObjectStorageClient client,
-            ResourceNode rootNode,
-            List<String> errors) {
-        try {
-            String namespace = client.getNamespace(GetNamespaceRequest.builder().build()).getValue();
-            ListBucketsRequest request = ListBucketsRequest.builder()
-                    .namespaceName(namespace)
-                    .compartmentId(compartmentId)
-                    .build();
-
-            List<BucketSummary> buckets = client.listBuckets(request).getItems();
-            if (buckets.isEmpty())
-                return;
-
-            // Synthetic VCN — represents the Object Storage service
-            ResourceNode storageVcn = ResourceNode.builder()
-                    .id("oci-object-storage-vcn")
-                    .name("Object Storage")
-                    .type("VCN")
-                    .details(Map.of("synthetic", true, "namespace", namespace))
-                    .build();
-
-            // Synthetic Subnet — groups all buckets at the same depth as real subnets
-            ResourceNode bucketSubnet = ResourceNode.builder()
-                    .id("oci-buckets-subnet")
-                    .name("Buckets")
-                    .type("SUBNET")
-                    .details(Map.of("synthetic", true))
-                    .build();
-
-            storageVcn.addChild(bucketSubnet);
-            rootNode.addChild(storageVcn);
-
-            buckets.forEach(bucket -> bucketSubnet.addChild(ResourceNode.builder()
-                    .id(bucket.getName())
-                    .name(bucket.getName())
-                    .type("BUCKET")
-                    .details(Map.of("namespace", bucket.getNamespace()))
-                    .build()));
-
-        } catch (Exception e) {
-            String msg = "Failed to fetch Buckets: " + buildUserFriendlyMessage(e);
-            log.warn(msg);
-            errors.add(msg);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Error translation
-    // ─────────────────────────────────────────────────────────────────────────────
 
     private String buildUserFriendlyMessage(Exception e) {
         if (e instanceof BmcException bmcEx) {
             int status = bmcEx.getStatusCode();
             String serviceCode = bmcEx.getServiceCode();
-
             if (status == 404 && "NotAuthorizedOrNotFound".equals(serviceCode)) {
-                return "Authorization failed or resource not found. "
-                        + "Please verify: (1) the Compartment OCID exists and belongs to your tenancy, "
-                        + "(2) your API key user has the required IAM policies "
-                        + "(e.g. 'Allow group <group> to read all-resources in compartment <name>'), "
-                        + "(3) the region is correct.";
-            }
-            if (status == 404 && "NamespaceNotFound".equals(serviceCode)) {
-                return "Object Storage namespace not found. "
-                        + "Please verify: (1) the Compartment OCID is correct, "
-                        + "(2) your API key user has IAM policies for Object Storage "
-                        + "(e.g. 'Allow group <group> to read object-family in compartment <name>').";
-            }
-            if (status == 401) {
-                return "Authentication failed. "
-                        + "Please verify your API key credentials: tenancy OCID, user OCID, fingerprint, and private key.";
-            }
-            if (status == 403) {
-                return "Access denied. Your API key user does not have permission for this operation. "
-                        + "Add the required IAM policy in the OCI Console under Identity → Policies.";
+                return "Authorization failed or resource not found. Verify Compartment OCID and IAM policies.";
             }
             return String.format("OCI API error (HTTP %d, %s): %s", status, serviceCode, bmcEx.getMessage());
         }

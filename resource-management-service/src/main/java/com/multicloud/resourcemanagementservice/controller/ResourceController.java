@@ -43,4 +43,14 @@ public class ResourceController {
         ResourceNode ociTree = resourceService.getOciResources(cloudProfileId);
         return ResponseEntity.ok(ociTree);
     }
+
+    @GetMapping("/stats")
+    @Operation(summary = "Fetch resource statistics",
+            description = "Returns aggregated counts of various resource types (Projects, VPCs, Subnets, etc.) for a specific cloud profile.")
+    public ResponseEntity<com.multicloud.resourcemanagementservice.dto.ResourceStats> getStats(
+            @Parameter(description = "The ID of the Cloud Profile", required = true)
+            @RequestParam String cloudProfileId) {
+        log.info("Fetching statistics for profile: {}", cloudProfileId);
+        return ResponseEntity.ok(resourceService.getStats(cloudProfileId));
+    }
 }
