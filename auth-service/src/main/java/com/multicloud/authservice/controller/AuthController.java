@@ -59,6 +59,15 @@ public class AuthController {
                 ApiResponse.success(null, "Password reset successfully"));
     }
 
+    @GetMapping("/validate-token")
+    @Operation(summary = "Validate password reset token")
+    public ResponseEntity<ApiResponse<Void>> validateToken(
+            @RequestParam String token) {
+        authService.validateToken(token);
+        return ResponseEntity.ok(
+                ApiResponse.success(null, "Token is valid"));
+    }
+
     @PostMapping("/logout")
     @Operation(summary = "Logout current user")
     public ResponseEntity<ApiResponse<Void>> logout(

@@ -25,7 +25,7 @@ spring:
         - id: auth-public
           uri: http://localhost:8081
           predicates:
-            - Path=/api/auth/login,/api/auth/forgot-password,/api/auth/reset-password
+            - Path=/api/auth/login,/api/auth/forgot-password,/api/auth/reset-password,/api/auth/validate-token
 
         - id: auth-protected
           uri: http://localhost:8081

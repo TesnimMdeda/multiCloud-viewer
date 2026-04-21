@@ -9,5 +9,6 @@ public interface AuthService {
     AuthResponse login(LoginRequest request);
     void forgotPassword(ForgotPasswordRequest request);
     void resetPassword(ResetPasswordRequest request);
+    void validateToken(String token);
     void logout(String token);
 }

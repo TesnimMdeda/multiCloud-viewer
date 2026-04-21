@@ -118,13 +118,17 @@ public class AuthServiceImpl implements AuthService {
             throw new InvalidTokenException("Passwords do not match");
         }
 
-        // Find matching token (iterate valid tokens for user)
-        PasswordResetToken matchedToken = tokenRepository
-                .findAll().stream()
-                .filter(t -> !t.isUsed() && !t.isExpired()
-                        && passwordEncoder.matches(request.getToken(), t.getToken()))
+        PasswordResetToken matchedToken = tokenRepository.findAll().stream()
+                .filter(t -> passwordEncoder.matches(request.getToken(), t.getToken()))
                 .findFirst()
-                .orElseThrow(() -> new InvalidTokenException("Token is invalid or expired"));
+                .orElseThrow(() -> new InvalidTokenException("Invalid token"));
+
+        if (matchedToken.isUsed()) {
+            throw new InvalidTokenException("Link already used");
+        }
+        if (matchedToken.isExpired()) {
+            throw new InvalidTokenException("Link expired");
+        }
 
         User user = matchedToken.getUser();
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -135,6 +139,21 @@ public class AuthServiceImpl implements AuthService {
         tokenRepository.save(matchedToken);
 
         log.info("Password successfully reset for user: {}", user.getEmail());
+    }
+
+    @Override
+    public void validateToken(String token) {
+        PasswordResetToken matchedToken = tokenRepository.findAll().stream()
+                .filter(t -> passwordEncoder.matches(token, t.getToken()))
+                .findFirst()
+                .orElseThrow(() -> new InvalidTokenException("Invalid token"));
+
+        if (matchedToken.isUsed()) {
+            throw new InvalidTokenException("Link already used");
+        }
+        if (matchedToken.isExpired()) {
+            throw new InvalidTokenException("Link expired");
+        }
     }
 
     @Override
