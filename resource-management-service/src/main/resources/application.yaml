@@ -55,3 +55,4 @@ logging:
   level:
     com.multicloud.resourcemanagementservice: DEBUG
     com.google.cloud: WARN
+    org.springframework.cache: DEBUG
