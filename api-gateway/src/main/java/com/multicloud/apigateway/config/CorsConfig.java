@@ -28,6 +28,7 @@ public class CorsConfig {
         // Add every frontend origin you need: local dev + production URL
         config.setAllowedOrigins(List.of(
                 "http://localhost:4200",   // Angular dev server
+                "http://127.0.0.1:4200",
                 "https://your-prod-app.com" // ← replace with your real domain
         ));
 

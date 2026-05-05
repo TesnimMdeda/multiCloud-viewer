@@ -11,6 +11,7 @@ spring:
           '[/**]':
             allowedOrigins:
               - "http://localhost:4200"
+            allowCredentials: true
             allowedMethods:
               - GET
               - POST
@@ -39,6 +40,25 @@ spring:
           uri: http://localhost:8082
           predicates:
             - Path=/api/cloud/**
+          filters:
+            - name: JwtAuthFilter
+              args: {}
+
+        - id: notification-service
+          uri: http://localhost:8086
+          predicates:
+            - Path=/api/notifications/**
+          metadata:
+            response-timeout: 300000
+            connect-timeout: 10000
+          filters:
+            - name: JwtAuthFilter
+              args: {}
+
+        - id: resource-management-service
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/resources/**
           filters:
             - name: JwtAuthFilter
               args: {}

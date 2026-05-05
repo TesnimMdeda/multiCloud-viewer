@@ -36,6 +36,7 @@ public class OciProfileServiceImpl implements OciProfileService {
     private final EncryptionService           encryptionService;
     private final OciProfileMapper            mapper;
     private final BucketFetcher               bucketFetcher;
+    private final com.multicloud.cloudprofileservice.client.NotificationClient notificationClient;
 
     public OciProfileServiceImpl(
             CloudProfileRepository profileRepository,
@@ -43,13 +44,15 @@ public class OciProfileServiceImpl implements OciProfileService {
             ValidatorFactory validatorFactory,
             EncryptionService encryptionService,
             OciProfileMapper mapper,
-            @Qualifier("ociBucketFetcher") BucketFetcher bucketFetcher) {
+            @Qualifier("ociBucketFetcher") BucketFetcher bucketFetcher,
+            com.multicloud.cloudprofileservice.client.NotificationClient notificationClient) {
         this.profileRepository = profileRepository;
         this.ociRepo           = ociRepo;
         this.validatorFactory  = validatorFactory;
         this.encryptionService = encryptionService;
         this.mapper            = mapper;
         this.bucketFetcher     = bucketFetcher;
+        this.notificationClient = notificationClient;
     }
 
     @Override
@@ -105,6 +108,18 @@ public class OciProfileServiceImpl implements OciProfileService {
 
         log.info("OCI profile {} created for owner {}. Buckets found: {}",
                 profile.getId(), ownerId, buckets.size());
+
+        // 5. Send Notification
+        try {
+            notificationClient.sendNotification(com.multicloud.cloudprofileservice.client.NotificationClient.NotificationRequest.builder()
+                    .userEmail(ownerId)
+                    .title("Cloud Profile Created")
+                    .message("Profile '" + profile.getProfileName() + "' is now " + profile.getStatus().name() + " and active.")
+                    .type(profile.getStatus() == CloudProfile.ProfileStatus.VALID ? "SUCCESS" : "ERROR")
+                    .build());
+        } catch (Exception e) {
+            log.error("Failed to send creation notification for profile {}", profile.getId(), e);
+        }
 
         return mapper.toResponse(profile, details, buckets, connectionMessage);
     }

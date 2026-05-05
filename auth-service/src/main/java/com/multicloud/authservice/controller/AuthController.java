@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.*;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,9 +26,22 @@ public class AuthController {
     @PostMapping("/login")
     @Operation(summary = "Authenticate user and return JWT")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
-            @Valid @RequestBody LoginRequest request) {
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response) {
+        AuthResponse authResponse = authService.login(request);
+
+        // Set JWT in HttpOnly cookie for secure SSE/EventSource support
+        ResponseCookie cookie = ResponseCookie.from("JWT-TOKEN", authResponse.getAccessToken())
+                .httpOnly(true)
+                .secure(false) // Set to true in production with HTTPS
+                .path("/")
+                .maxAge(authResponse.getExpiresIn() / 1000)
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
         return ResponseEntity.ok(
-                ApiResponse.success(authService.login(request), "Login successful"));
+                ApiResponse.success(authResponse, "Login successful"));
     }
 
     @PostMapping("/users")
@@ -71,8 +85,20 @@ public class AuthController {
     @PostMapping("/logout")
     @Operation(summary = "Logout current user")
     public ResponseEntity<ApiResponse<Void>> logout(
-            @RequestHeader("Authorization") String authHeader) {
+            @RequestHeader("Authorization") String authHeader,
+            HttpServletResponse response) {
         authService.logout(authHeader.substring(7));
+
+        // Clear the JWT cookie
+        ResponseCookie cookie = ResponseCookie.from("JWT-TOKEN", "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
         return ResponseEntity.ok(
                 ApiResponse.success(null, "Logged out successfully"));
     }

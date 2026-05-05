@@ -33,6 +33,7 @@ public class AuthServiceImpl implements AuthService {
     private final EmailService emailService;
     private final UserMapper userMapper;
     private final TokenGenerator tokenGenerator;
+    private final com.multicloud.authservice.client.NotificationClient notificationClient;
 
     @Value("${jwt.expiration}") private long jwtExpiration;
     @Value("${jwt.reset-token-expiration}") private long resetTokenExpiration;
@@ -139,6 +140,22 @@ public class AuthServiceImpl implements AuthService {
         tokenRepository.save(matchedToken);
 
         log.info("Password successfully reset for user: {}", user.getEmail());
+
+        // Notify the creator that the user is now active
+        if (user.getCreatedBy() != null) {
+            userRepository.findById(user.getCreatedBy()).ifPresent(creator -\u003e {
+                try {
+                    notificationClient.sendNotification(com.multicloud.authservice.client.NotificationClient.NotificationRequest.builder()
+                            .userEmail(creator.getEmail())
+                            .title("User Account Active")
+                            .message("User " + user.getFirstName() + " " + user.getLastName() + " (" + user.getEmail() + ") has set their password and is now active.")
+                            .type("SUCCESS")
+                            .build());
+                } catch (Exception e) {
+                    log.error("Failed to send activation notification to creator {}", creator.getEmail(), e);
+                }
+            });
+        }
     }
 
     @Override

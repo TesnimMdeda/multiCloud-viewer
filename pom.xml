@@ -28,6 +28,7 @@
     <module>auth-service</module>
     <module>cloud-profile-service</module>
     <module>resource-management-service</module>
+    <module>notification-service</module>
   </modules>
 
   <!-- Global properties -->
