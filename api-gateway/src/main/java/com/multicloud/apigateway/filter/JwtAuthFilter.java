@@ -35,19 +35,24 @@ public class JwtAuthFilter extends AbstractGatewayFilterFactory<JwtAuthFilter.Co
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 token = authHeader.substring(7);
             } else {
-                // Fallback: Check for JWT in HttpOnly cookie
-                var cookie = exchange.getRequest().getCookies().getFirst("JWT-TOKEN");
-                if (cookie != null) {
-                    token = cookie.getValue();
-                } else {
-                    // Manual parsing as a fallback for some browser/gateway edge cases
-                    String cookieHeader = exchange.getRequest().getHeaders().getFirst(org.springframework.http.HttpHeaders.COOKIE);
-                    if (cookieHeader != null && cookieHeader.contains("JWT-TOKEN=")) {
-                        for (String c : cookieHeader.split(";")) {
-                            String trimmed = c.trim();
-                            if (trimmed.startsWith("JWT-TOKEN=")) {
-                                token = trimmed.substring("JWT-TOKEN=".length());
-                                break;
+                // Fallback 1: Check for JWT in 'token' query parameter (common for SSE/EventSource)
+                token = exchange.getRequest().getQueryParams().getFirst("token");
+
+                if (token == null) {
+                    // Fallback 2: Check for JWT in HttpOnly cookie
+                    var cookie = exchange.getRequest().getCookies().getFirst("JWT-TOKEN");
+                    if (cookie != null) {
+                        token = cookie.getValue();
+                    } else {
+                        // Manual parsing as a fallback for some browser/gateway edge cases
+                        String cookieHeader = exchange.getRequest().getHeaders().getFirst(org.springframework.http.HttpHeaders.COOKIE);
+                        if (cookieHeader != null && cookieHeader.contains("JWT-TOKEN=")) {
+                            for (String c : cookieHeader.split(";")) {
+                                String trimmed = c.trim();
+                                if (trimmed.startsWith("JWT-TOKEN=")) {
+                                    token = trimmed.substring("JWT-TOKEN=".length());
+                                    break;
+                                }
                             }
                         }
                     }

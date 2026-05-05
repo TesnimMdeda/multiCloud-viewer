@@ -111,7 +111,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             return authHeader.substring(7);
         }
-        // Fallback: Check for JWT in HttpOnly cookie (more secure than query parameters)
+
+        // Fallback 1: Check for JWT in 'token' query parameter (common for SSE / EventSource)
+        String queryToken = request.getParameter("token");
+        if (queryToken != null && !queryToken.isBlank()) {
+            return queryToken;
+        }
+
+        // Fallback 2: Check for JWT in HttpOnly cookie
         Cookie cookie = WebUtils.getCookie(request, "JWT-TOKEN");
         return (cookie != null) ? cookie.getValue() : null;
     }
