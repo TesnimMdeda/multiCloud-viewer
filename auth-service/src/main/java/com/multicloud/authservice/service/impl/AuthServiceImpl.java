@@ -143,7 +143,7 @@ public class AuthServiceImpl implements AuthService {
 
         // Notify the creator that the user is now active
         if (user.getCreatedBy() != null) {
-            userRepository.findById(user.getCreatedBy()).ifPresent(creator -\u003e {
+            userRepository.findById(user.getCreatedBy()).ifPresent(creator -> {
                 try {
                     notificationClient.sendNotification(com.multicloud.authservice.client.NotificationClient.NotificationRequest.builder()
                             .userEmail(creator.getEmail())
